@@ -96,10 +96,12 @@ enterprise-support-agent-v2/
 │   │   └── config/             # 强类型配置与启动期校验
 │   └── ha/                     # Patroni / HAProxy / Redis Sentinel 高可用配置
 ├── knowledge-frontend/         # Vue 3 + Element Plus + Vite 6 极简故障诊断工作台
-├── src/
-│   ├── api/knowledge_index.py  # 内网 Python 索引、检索与 SSE 流式生成服务
-│   ├── infrastructure/         # pgvector HNSW / FTS5 / Embedding / LLM 适配层
-│   └── agents/ & rag/          # LangGraph Agentic RAG 状态机、RRF 融合与证据校验
+├── src/                        # Python AI 数据面（内网检索、索引与 Agentic RAG 引擎）
+│   ├── api/                    # 内网 FastAPI 入口（knowledge_index.py，承接索引/检索/SSE 流式接口）
+│   ├── agents/                 # LangGraph Agentic RAG 状态机（分类、改写、重检、引用校验与拒答）
+│   ├── rag/                    # PDF 解析、语义切分、BM25+Dense 混合检索、RRF 融合与逐分块证据检查
+│   ├── infrastructure/         # pgvector HNSW 迭代扫描、PG FTS、墓碑表、Qwen/Ollama LLM 与 Embedding 适配
+│   └── settings/               # 检索、模型与运行时强类型配置
 ├── eval/                       # 357 题拒答对比评测集与 48 并发压测脚本
 ├── tests/                      # 单元、集群、Kafka、Redis、生命周期与 HA 停机演练测试
 ├── knowledge-compose.yml       # 标准多副本部署编排
