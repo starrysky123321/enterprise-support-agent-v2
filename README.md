@@ -87,7 +87,13 @@ docker compose -f knowledge-compose.yml -f knowledge-ha-compose.yml \
 
 ```text
 enterprise-support-agent-v2/
-├── knowledge-backend/          # Spring Boot 3 控制面（RBAC / Outbox / Kafka / Redis Lua / Flyway V1-V8 / JUnit 5）
+├── knowledge-backend/          # Spring Boot 3 控制面（Flyway V1-V8 / JUnit 5）
+│   ├── src/main/java/com/enterprisesupport/knowledge/
+│   │   ├── controller/         # REST API 与 SSE 流式控制器
+│   │   ├── service/            # Outbox/Kafka、Redis Lua、PDF 外置存储、并发护栏
+│   │   ├── repository/         # PostgreSQL JdbcClient 数据访问与事务状态机
+│   │   ├── security/           # Bearer / HttpOnly Cookie 认证过滤器与 RBAC
+│   │   └── config/             # 强类型配置与启动期校验
 │   └── ha/                     # Patroni / HAProxy / Redis Sentinel 高可用配置
 ├── knowledge-frontend/         # Vue 3 + Element Plus + Vite 6 极简故障诊断工作台
 ├── src/
