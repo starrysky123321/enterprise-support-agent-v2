@@ -1,4 +1,8 @@
-package com.enterprisesupport.knowledge;
+package com.enterprisesupport.knowledge.repository;
+
+import com.enterprisesupport.knowledge.config.KnowledgeProperties;
+import com.enterprisesupport.knowledge.security.TokenDigest;
+import com.enterprisesupport.knowledge.service.PdfBlobStore;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -10,7 +14,7 @@ import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
 @Repository
-class VersionCatalog {
+public class VersionCatalog {
     private static final String STATUS_QUERY = """
             SELECT v.document_id, v.version_number, v.status, v.attempt, v.failure_reason,
                    d.published_version
@@ -26,42 +30,42 @@ class VersionCatalog {
     private final PdfBlobStore blobStore;
     private final boolean kafkaEnabled;
 
-    VersionCatalog(JdbcClient db, IndexOutbox outbox, PdfBlobStore blobStore, KnowledgeProperties config) {
+    public VersionCatalog(JdbcClient db, IndexOutbox outbox, PdfBlobStore blobStore, KnowledgeProperties config) {
         this.db = db;
         this.outbox = outbox;
         this.blobStore = blobStore;
         this.kafkaEnabled = config.kafkaEnabled();
     }
 
-    record VersionStatus(String documentId, long versionNumber, String status, int attempt,
+    public record VersionStatus(String documentId, long versionNumber, String status, int attempt,
                          String failureReason, Long publishedVersion) {
     }
 
-    record PublishedVersion(UUID id, long versionNumber) {
+    public record PublishedVersion(UUID id, long versionNumber) {
     }
 
-    record PublishedDocument(UUID indexId, String documentId, long version, String filename) {
+    public record PublishedDocument(UUID indexId, String documentId, long version, String filename) {
     }
 
-    record PublishedWorkspace(long catalogVersion, List<PublishedDocument> documents) {
+    public record PublishedWorkspace(long catalogVersion, List<PublishedDocument> documents) {
     }
 
-    record Metadata(String documentType, String productName, String productVersion) {
-        static final Metadata EMPTY = new Metadata(null, null, null);
+    public record Metadata(String documentType, String productName, String productVersion) {
+        public static final Metadata EMPTY = new Metadata(null, null, null);
     }
 
-    record DocumentSummary(String documentId, long latestVersion, Long publishedVersion,
+    public record DocumentSummary(String documentId, long latestVersion, Long publishedVersion,
                            String status, String contentType, String filename,
                            String documentType, String productName, String productVersion) {
     }
 
-    record IndexJob(UUID id, String workspaceId, String documentId, long versionNumber,
+    public record IndexJob(UUID id, String workspaceId, String documentId, long versionNumber,
                     String body, String filename, byte[] pdf, String pdfStorageKey,
                     String documentType, String productName, String productVersion,
                     int attempt, int cycleAttempt) {
     }
 
-    record PurgeJob(UUID id, int purgeAttempt, String pdfStorageKey) {
+    public record PurgeJob(UUID id, int purgeAttempt, String pdfStorageKey) {
     }
 
     private record PublishedWorkspaceRow(long catalogVersion, UUID indexId, String documentId,
@@ -149,7 +153,7 @@ class VersionCatalog {
         }
     }
 
-    Optional<VersionStatus> status(String workspaceId, String documentId, long version) {
+    public Optional<VersionStatus> status(String workspaceId, String documentId, long version) {
         return db.sql(STATUS_QUERY + " AND v.version_number = :version")
                 .param("workspaceId", workspaceId).param("documentId", documentId).param("version", version)
                 .query(VersionStatus.class).optional();
@@ -172,7 +176,7 @@ class VersionCatalog {
         return status(workspaceId, documentId, version);
     }
 
-    Optional<PublishedVersion> published(String workspaceId, String documentId) {
+    public Optional<PublishedVersion> published(String workspaceId, String documentId) {
         return db.sql("""
                 SELECT v.id, v.version_number
                 FROM knowledge_backend.documents d
@@ -185,7 +189,7 @@ class VersionCatalog {
                 .query(PublishedVersion.class).optional();
     }
 
-    PublishedWorkspace publishedWorkspace(String workspaceId) {
+    public PublishedWorkspace publishedWorkspace(String workspaceId) {
         var rows = db.sql("""
                 SELECT w.catalog_version, v.id AS index_id, d.id AS document_id,
                        v.version_number AS version, v.filename
@@ -206,7 +210,7 @@ class VersionCatalog {
         return new PublishedWorkspace(catalogVersion, documents);
     }
 
-    List<DocumentSummary> listDocuments(String workspaceId, String after, int limit) {
+    public List<DocumentSummary> listDocuments(String workspaceId, String after, int limit) {
         return db.sql("""
                 SELECT d.id AS document_id, d.last_version AS latest_version, d.published_version,
                        v.status, v.content_type, v.filename,
@@ -235,7 +239,7 @@ class VersionCatalog {
         }
     }
 
-    Optional<PurgeJob> claimPurge() {
+    public Optional<PurgeJob> claimPurge() {
         return db.sql("""
                 WITH candidate AS (
                     SELECT id FROM knowledge_backend.document_versions
@@ -248,7 +252,7 @@ class VersionCatalog {
                 """).query(PurgeJob.class).optional();
     }
 
-    void completePurge(PurgeJob job) {
+    public void completePurge(PurgeJob job) {
         db.sql("""
                 UPDATE knowledge_backend.document_versions
                 SET body = NULL, pdf = NULL, pdf_storage_key = NULL, purged_at = now()
@@ -256,7 +260,7 @@ class VersionCatalog {
                 """).param("id", job.id()).param("attempt", job.purgeAttempt()).update();
     }
 
-    Optional<IndexJob> claimNext(int maxAttempts) {
+    public Optional<IndexJob> claimNext(int maxAttempts) {
         return db.sql("""
                 WITH next_job AS (
                     SELECT id FROM knowledge_backend.document_versions
@@ -276,7 +280,7 @@ class VersionCatalog {
                 """).param("maxAttempts", maxAttempts).query(IndexJob.class).optional();
     }
 
-    Optional<IndexJob> claimDispatched(UUID id) {
+    public Optional<IndexJob> claimDispatched(UUID id) {
         return db.sql("""
                 UPDATE knowledge_backend.document_versions
                 SET status = 'INDEXING', attempt = attempt + 1, cycle_attempt = cycle_attempt + 1,
@@ -304,7 +308,7 @@ class VersionCatalog {
                 """).param("maxAttempts", maxAttempts).query(UUID.class).list().forEach(outbox::add);
     }
 
-    int failExpired(int maxAttempts) {
+    public int failExpired(int maxAttempts) {
         return db.sql("""
                 WITH expired AS (
                     SELECT id FROM knowledge_backend.document_versions

@@ -1,4 +1,6 @@
-package com.enterprisesupport.knowledge;
+package com.enterprisesupport.knowledge.service;
+
+import com.enterprisesupport.knowledge.config.KnowledgeProperties;
 
 import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Duration;
@@ -12,7 +14,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 
 @Component
-final class WorkspaceRateLimit {
+public final class WorkspaceRateLimit {
     private static final long REDIS_COOLDOWN = Duration.ofSeconds(1).toNanos();
     private static final KnowledgeProperties.Budget LOGIN_BUDGET = new KnowledgeProperties.Budget(12, 8);
 
@@ -22,7 +24,7 @@ final class WorkspaceRateLimit {
     private final DefaultRedisScript<Long> bucket;
     private volatile long probeAfter = Long.MIN_VALUE;
 
-    WorkspaceRateLimit(KnowledgeProperties config, StringRedisTemplate redis, MeterRegistry metrics) {
+    public WorkspaceRateLimit(KnowledgeProperties config, StringRedisTemplate redis, MeterRegistry metrics) {
         this.config = config.rateLimit();
         this.redis = redis;
         this.metrics = metrics;
@@ -31,7 +33,7 @@ final class WorkspaceRateLimit {
         bucket.setResultType(Long.class);
     }
 
-    enum Operation {
+    public enum Operation {
         SEARCH("search"), ASK("ask"), LOGIN("login");
 
         final String label;
@@ -41,7 +43,7 @@ final class WorkspaceRateLimit {
         }
     }
 
-    void acquire(String workspace, Operation operation) {
+    public void acquire(String workspace, Operation operation) {
         if (!config.enabled()) {
             return;
         }
@@ -88,9 +90,9 @@ final class WorkspaceRateLimit {
         metrics.counter("knowledge.quota.decisions", "operation", operation.label, "outcome", outcome).increment();
     }
 
-    static final class Rejected extends RuntimeException {
-        final HttpStatus status;
-        final long retryAfter;
+    public static final class Rejected extends RuntimeException {
+        public final HttpStatus status;
+        public final long retryAfter;
 
         Rejected(HttpStatus status, long retryAfter, String message) {
             super(message);

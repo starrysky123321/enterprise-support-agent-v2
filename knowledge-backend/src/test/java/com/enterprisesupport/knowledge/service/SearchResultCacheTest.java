@@ -1,4 +1,6 @@
-package com.enterprisesupport.knowledge;
+package com.enterprisesupport.knowledge.service;
+
+import com.enterprisesupport.knowledge.config.KnowledgeProperties;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;

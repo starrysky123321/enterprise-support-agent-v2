@@ -1,4 +1,7 @@
-package com.enterprisesupport.knowledge;
+package com.enterprisesupport.knowledge.service;
+
+import com.enterprisesupport.knowledge.config.KnowledgeProperties;
+import com.enterprisesupport.knowledge.security.TokenDigest;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -18,8 +21,8 @@ import org.springframework.stereotype.Component;
 
 @Component
 @ConditionalOnProperty(name = "knowledge.api-enabled", havingValue = "true", matchIfMissing = true)
-final class SearchResultCache {
-    static final String METRICS_KEY = "knowledge:metrics:search_cache";
+public final class SearchResultCache {
+    public static final String METRICS_KEY = "knowledge:metrics:search_cache";
     private static final String PREFIX = "knowledge:cache:{search}:v1:";
     private static final String EXPIRATIONS = PREFIX + "expirations";
     private static final int MAX_VALUE_BYTES = 64 * 1024;
@@ -34,7 +37,7 @@ final class SearchResultCache {
     private final DefaultRedisScript<Long> store;
     private volatile long probeAfter = Long.MIN_VALUE;
 
-    SearchResultCache(StringRedisTemplate redis, ObjectMapper mapper, MeterRegistry metrics,
+    public SearchResultCache(StringRedisTemplate redis, ObjectMapper mapper, MeterRegistry metrics,
                       KnowledgeProperties properties) {
         this.redis = redis;
         this.mapper = mapper;
@@ -47,21 +50,21 @@ final class SearchResultCache {
         store.setResultType(Long.class);
     }
 
-    JsonNode search(String workspace, UUID publishedId, String query, Supplier<JsonNode> retrieve) {
+    public JsonNode search(String workspace, UUID publishedId, String query, Supplier<JsonNode> retrieve) {
         return search(workspace, publishedId, query, "", retrieve);
     }
 
-    JsonNode search(String workspace, UUID publishedId, String query, String filterFingerprint,
+    public JsonNode search(String workspace, UUID publishedId, String query, String filterFingerprint,
                     Supplier<JsonNode> retrieve) {
         return lookup(singleDocumentKey(workspace, publishedId, query, filterFingerprint), retrieve);
     }
 
-    JsonNode searchWorkspace(String workspace, long catalogVersion, List<UUID> publishedIds, String query,
+    public JsonNode searchWorkspace(String workspace, long catalogVersion, List<UUID> publishedIds, String query,
                              Supplier<JsonNode> retrieve) {
         return searchWorkspace(workspace, catalogVersion, publishedIds, query, "", retrieve);
     }
 
-    JsonNode searchWorkspace(String workspace, long catalogVersion, List<UUID> publishedIds, String query,
+    public JsonNode searchWorkspace(String workspace, long catalogVersion, List<UUID> publishedIds, String query,
                              String filterFingerprint, Supplier<JsonNode> retrieve) {
         if (publishedIds.isEmpty()) {
             return retrieve.get();

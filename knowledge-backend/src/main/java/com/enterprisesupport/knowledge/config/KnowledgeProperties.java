@@ -1,4 +1,4 @@
-package com.enterprisesupport.knowledge;
+package com.enterprisesupport.knowledge.config;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -13,7 +13,7 @@ import org.springframework.validation.annotation.Validated;
 
 @ConfigurationProperties("knowledge")
 @Validated
-record KnowledgeProperties(
+public record KnowledgeProperties(
         @NotBlank @Size(min = 32) String apiToken,
         @NotBlank @Size(min = 32) String indexToken,
         @NotNull URI indexUrl,
@@ -29,23 +29,23 @@ record KnowledgeProperties(
         @NotNull @Valid SearchCache searchCache,
         @NotNull @Valid RateLimit rateLimit) {
 
-    record PdfStorage(
+    public record PdfStorage(
             @NotBlank @Pattern(regexp = "filesystem|database") String mode,
             @NotBlank String directory) {
-        boolean isFilesystem() {
+        public boolean isFilesystem() {
             return "filesystem".equals(mode);
         }
     }
 
-    record SearchCache(boolean enabled,
+    public record SearchCache(boolean enabled,
                        @Min(1) @Max(300) int ttlSeconds,
                        @Min(1) @Max(4096) int maxEntries,
                        @NotBlank @Pattern(regexp = "[a-zA-Z0-9._-]{1,64}") String revision) {
     }
 
-    record RateLimit(boolean enabled, @NotNull @Valid Budget search, @NotNull @Valid Budget ask) {
+    public record RateLimit(boolean enabled, @NotNull @Valid Budget search, @NotNull @Valid Budget ask) {
     }
 
-    record Budget(@Min(1) @Max(6_000_000) int perMinute, @Min(1) @Max(100_000) int burst) {
+    public record Budget(@Min(1) @Max(6_000_000) int perMinute, @Min(1) @Max(100_000) int burst) {
     }
 }

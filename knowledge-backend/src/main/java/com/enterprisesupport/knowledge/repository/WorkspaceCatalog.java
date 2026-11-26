@@ -1,4 +1,7 @@
-package com.enterprisesupport.knowledge;
+package com.enterprisesupport.knowledge.repository;
+
+import com.enterprisesupport.knowledge.security.AccessGrant;
+import com.enterprisesupport.knowledge.security.TokenDigest;
 
 import java.time.Instant;
 import java.util.List;
@@ -10,36 +13,36 @@ import org.springframework.stereotype.Repository;
 import org.springframework.web.server.ResponseStatusException;
 
 @Repository
-class WorkspaceCatalog {
+public class WorkspaceCatalog {
     private final JdbcClient db;
 
-    WorkspaceCatalog(JdbcClient db) {
+    public WorkspaceCatalog(JdbcClient db) {
         this.db = db;
     }
 
-    record IssuedKey(UUID id, String token, AccessGrant.Role role) {
+    public record IssuedKey(UUID id, String token, AccessGrant.Role role) {
     }
 
-    record KeySummary(UUID id, AccessGrant.Role role, Instant createdAt) {
+    public record KeySummary(UUID id, AccessGrant.Role role, Instant createdAt) {
     }
 
-    record Workspace(String workspaceId, AccessGrant.Role role) {
+    public record Workspace(String workspaceId, AccessGrant.Role role) {
     }
 
-    record Member(UUID accountId, String email, AccessGrant.Role role) {
+    public record Member(UUID accountId, String email, AccessGrant.Role role) {
     }
 
-    void create(String workspaceId) {
+    public void create(String workspaceId) {
         db.sql("INSERT INTO knowledge_backend.workspaces (id) VALUES (:id) ON CONFLICT DO NOTHING")
                 .param("id", workspaceId).update();
     }
 
-    boolean exists(String workspaceId) {
+    public boolean exists(String workspaceId) {
         return db.sql("SELECT EXISTS (SELECT 1 FROM knowledge_backend.workspaces WHERE id = :id)")
                 .param("id", workspaceId).query(Boolean.class).single();
     }
 
-    String requireAccess(AccessGrant grant, String requested, boolean write) {
+    public String requireAccess(AccessGrant grant, String requested, boolean write) {
         String workspace = requested == null ? AccessGrant.DEFAULT_WORKSPACE : requested;
         if (grant.admin()) {
             return workspace;
@@ -60,7 +63,7 @@ class WorkspaceCatalog {
         return workspace;
     }
 
-    List<Workspace> visibleTo(AccessGrant grant) {
+    public List<Workspace> visibleTo(AccessGrant grant) {
         if (grant.admin()) {
             return db.sql("SELECT id AS workspace_id, 'ADMIN' AS role FROM knowledge_backend.workspaces ORDER BY id")
                     .query(Workspace.class).list();
@@ -74,7 +77,7 @@ class WorkspaceCatalog {
                 """).param("account", grant.accountId()).query(Workspace.class).list();
     }
 
-    List<Member> members(String workspaceId) {
+    public List<Member> members(String workspaceId) {
         return db.sql("""
                 SELECT a.id AS account_id, a.email, m.role
                 FROM knowledge_backend.workspace_members m
@@ -83,7 +86,7 @@ class WorkspaceCatalog {
                 """).param("workspace", workspaceId).query(Member.class).list();
     }
 
-    void putMember(String workspaceId, UUID accountId, AccessGrant.Role role) {
+    public void putMember(String workspaceId, UUID accountId, AccessGrant.Role role) {
         int updated = db.sql("""
                 INSERT INTO knowledge_backend.workspace_members (workspace_id, account_id, role)
                 SELECT :workspace, id, :role FROM knowledge_backend.accounts WHERE id = :account
@@ -95,20 +98,20 @@ class WorkspaceCatalog {
         }
     }
 
-    void removeMember(String workspaceId, UUID accountId) {
+    public void removeMember(String workspaceId, UUID accountId) {
         db.sql("""
                 DELETE FROM knowledge_backend.workspace_members WHERE workspace_id = :workspace AND account_id = :account
                 """).param("workspace", workspaceId).param("account", accountId).update();
     }
 
-    List<KeySummary> listKeys(String workspaceId) {
+    public List<KeySummary> listKeys(String workspaceId) {
         return db.sql("""
                 SELECT id, role, created_at FROM knowledge_backend.workspace_keys
                 WHERE workspace_id = :workspace ORDER BY created_at DESC
                 """).param("workspace", workspaceId).query(KeySummary.class).list();
     }
 
-    IssuedKey issue(String workspaceId, AccessGrant.Role role) {
+    public IssuedKey issue(String workspaceId, AccessGrant.Role role) {
         String token = TokenDigest.issue("kb_");
         UUID id = UUID.randomUUID();
         db.sql("""
@@ -119,12 +122,12 @@ class WorkspaceCatalog {
         return new IssuedKey(id, token, role);
     }
 
-    void revoke(String workspaceId, UUID id) {
+    public void revoke(String workspaceId, UUID id) {
         db.sql("DELETE FROM knowledge_backend.workspace_keys WHERE id = :id AND workspace_id = :workspace")
                 .param("id", id).param("workspace", workspaceId).update();
     }
 
-    Optional<AccessGrant> authenticate(String token) {
+    public Optional<AccessGrant> authenticate(String token) {
         return db.sql("SELECT workspace_id, role FROM knowledge_backend.workspace_keys WHERE token_hash = :digest")
                 .param("digest", TokenDigest.sha256(token))
                 .query((rs, row) -> new AccessGrant(rs.getString("workspace_id"),

@@ -1,4 +1,7 @@
-package com.enterprisesupport.knowledge;
+package com.enterprisesupport.knowledge.repository;
+
+import com.enterprisesupport.knowledge.security.AccessGrant;
+import com.enterprisesupport.knowledge.security.TokenDigest;
 
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -12,27 +15,27 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 @Repository
-class AccountCatalog {
+public class AccountCatalog {
     private static final String PROFILE = """
             SELECT id, email, is_active AS active, is_admin AS admin, is_verified AS verified, department
             FROM knowledge_backend.accounts
             """;
     private final JdbcClient db;
 
-    AccountCatalog(JdbcClient db) {
+    public AccountCatalog(JdbcClient db) {
         this.db = db;
     }
 
-    record Profile(UUID id, String email, boolean active, boolean admin, boolean verified, String department) {
+    public record Profile(UUID id, String email, boolean active, boolean admin, boolean verified, String department) {
     }
 
-    record Credentials(UUID id, String passwordHash, boolean active) {
+    public record Credentials(UUID id, String passwordHash, boolean active) {
     }
 
-    record Session(String accessToken, String tokenType, OffsetDateTime expiresAt) {
+    public record Session(String accessToken, String tokenType, OffsetDateTime expiresAt) {
     }
 
-    Profile register(String email, String passwordHash) {
+    public Profile register(String email, String passwordHash) {
         UUID id = UUID.randomUUID();
         int created = db.sql("""
                 INSERT INTO knowledge_backend.accounts (id, email, password_hash)
@@ -44,23 +47,23 @@ class AccountCatalog {
         return profile(id);
     }
 
-    Profile profile(UUID id) {
+    public Profile profile(UUID id) {
         return db.sql(PROFILE + " WHERE id = :id").param("id", id).query(Profile.class).optional()
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found"));
     }
 
-    List<Profile> list(UUID after, int limit) {
+    public List<Profile> list(UUID after, int limit) {
         return db.sql(PROFILE + " WHERE (CAST(:after AS uuid) IS NULL OR id > :after) ORDER BY id LIMIT :limit")
                 .param("after", after, java.sql.Types.OTHER).param("limit", limit).query(Profile.class).list();
     }
 
-    Optional<Credentials> credentials(String email) {
+    public Optional<Credentials> credentials(String email) {
         return db.sql("""
                 SELECT id, password_hash, is_active AS active FROM knowledge_backend.accounts WHERE email = :email
                 """).param("email", email).query(Credentials.class).optional();
     }
 
-    Credentials credentials(UUID id) {
+    public Credentials credentials(UUID id) {
         return db.sql("""
                 SELECT id, password_hash, is_active AS active FROM knowledge_backend.accounts WHERE id = :id
                 """).param("id", id).query(Credentials.class).single();
@@ -86,7 +89,7 @@ class AccountCatalog {
         return new Session(token, "Bearer", expiresAt);
     }
 
-    Optional<AccessGrant> authenticate(String token) {
+    public Optional<AccessGrant> authenticate(String token) {
         return db.sql("""
                 SELECT a.id, a.is_admin, s.id AS session_id
                 FROM knowledge_backend.account_sessions s
@@ -98,7 +101,7 @@ class AccountCatalog {
                         row.getObject("id", UUID.class), row.getObject("session_id", UUID.class))).optional();
     }
 
-    void logout(UUID sessionId) {
+    public void logout(UUID sessionId) {
         db.sql("DELETE FROM knowledge_backend.account_sessions WHERE id = :id").param("id", sessionId).update();
     }
 
@@ -135,7 +138,7 @@ class AccountCatalog {
         return profile(accountId);
     }
 
-    Profile setDepartment(UUID accountId, String department) {
+    public Profile setDepartment(UUID accountId, String department) {
         db.sql("UPDATE knowledge_backend.accounts SET department = :department WHERE id = :id")
                 .param("department", department).param("id", accountId).update();
         return profile(accountId);
@@ -147,7 +150,7 @@ class AccountCatalog {
     }
 
     @Scheduled(fixedDelay = 900_000)
-    void deleteExpiredSessions() {
+    public void deleteExpiredSessions() {
         db.sql("""
                 DELETE FROM knowledge_backend.account_sessions WHERE id IN (
                     SELECT id FROM knowledge_backend.account_sessions WHERE expires_at <= now()
@@ -156,7 +159,7 @@ class AccountCatalog {
                 """).update();
     }
 
-    static ResponseStatusException invalidCredentials() {
+    public static ResponseStatusException invalidCredentials() {
         return new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid credentials");
     }
 }

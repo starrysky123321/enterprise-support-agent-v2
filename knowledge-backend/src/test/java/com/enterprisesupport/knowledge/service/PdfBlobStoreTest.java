@@ -1,4 +1,7 @@
-package com.enterprisesupport.knowledge;
+package com.enterprisesupport.knowledge.service;
+
+import com.enterprisesupport.knowledge.config.KnowledgeProperties;
+import com.enterprisesupport.knowledge.security.TokenDigest;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;

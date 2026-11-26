@@ -1,4 +1,8 @@
-package com.enterprisesupport.knowledge;
+package com.enterprisesupport.knowledge.security;
+
+import com.enterprisesupport.knowledge.config.KnowledgeProperties;
+import com.enterprisesupport.knowledge.repository.AccountCatalog;
+import com.enterprisesupport.knowledge.repository.WorkspaceCatalog;
 
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -14,14 +18,14 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 @Component
-final class ApiTokenFilter extends OncePerRequestFilter {
-    static final String SESSION_COOKIE = "knowledge_session";
+public final class ApiTokenFilter extends OncePerRequestFilter {
+    public static final String SESSION_COOKIE = "knowledge_session";
     private static final String PREFIX = "Bearer ";
     private final byte[] authorization;
     private final WorkspaceCatalog workspaces;
     private final AccountCatalog accounts;
 
-    ApiTokenFilter(KnowledgeProperties properties, WorkspaceCatalog workspaces, AccountCatalog accounts) {
+    public ApiTokenFilter(KnowledgeProperties properties, WorkspaceCatalog workspaces, AccountCatalog accounts) {
         this.workspaces = workspaces;
         this.accounts = accounts;
         authorization = (PREFIX + properties.apiToken()).getBytes(StandardCharsets.UTF_8);

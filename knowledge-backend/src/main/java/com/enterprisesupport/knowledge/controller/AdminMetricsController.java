@@ -1,6 +1,9 @@
-package com.enterprisesupport.knowledge;
+package com.enterprisesupport.knowledge.controller;
 
-import static com.enterprisesupport.knowledge.AccessGrant.ATTRIBUTE;
+import com.enterprisesupport.knowledge.security.AccessGrant;
+import com.enterprisesupport.knowledge.service.SearchResultCache;
+
+import static com.enterprisesupport.knowledge.security.AccessGrant.ATTRIBUTE;
 
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Gauge;
@@ -18,17 +21,17 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @ConditionalOnProperty(name = "knowledge.api-enabled", havingValue = "true", matchIfMissing = true)
 @RequestMapping("/api/knowledge/admin")
-final class AdminMetricsController {
+public final class AdminMetricsController {
     private final MeterRegistry metrics;
     private final StringRedisTemplate redis;
 
-    AdminMetricsController(MeterRegistry metrics, StringRedisTemplate redis) {
+    public AdminMetricsController(MeterRegistry metrics, StringRedisTemplate redis) {
         this.metrics = metrics;
         this.redis = redis;
     }
 
     @GetMapping("/metrics")
-    Map<String, Object> summary(@RequestAttribute(ATTRIBUTE) AccessGrant grant) {
+    public Map<String, Object> summary(@RequestAttribute(ATTRIBUTE) AccessGrant grant) {
         grant.requireAdmin();
         long cacheHit = counter("knowledge.search.cache", "outcome", "hit");
         long cacheMiss = counter("knowledge.search.cache", "outcome", "miss");

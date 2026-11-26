@@ -1,4 +1,7 @@
-package com.enterprisesupport.knowledge;
+package com.enterprisesupport.knowledge.service;
+
+import com.enterprisesupport.knowledge.repository.AccountCatalog;
+import com.enterprisesupport.knowledge.security.TokenDigest;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
@@ -13,7 +16,7 @@ import org.springframework.stereotype.Service;
 
 @Service
 @ConditionalOnProperty(name = "knowledge.api-enabled", havingValue = "true", matchIfMissing = true)
-final class AccountPasswords {
+public final class AccountPasswords {
     private final Argon2PasswordEncoder argon = Argon2PasswordEncoder.defaultsForSpringSecurity_v5_8();
     private final BCryptPasswordEncoder bcrypt = new BCryptPasswordEncoder();
     private final String dummyHash = argon.encode(TokenDigest.issue(""));
@@ -21,17 +24,17 @@ final class AccountPasswords {
     private final AccountCatalog accounts;
     private final WorkspaceRateLimit rateLimit;
 
-    AccountPasswords(AccountCatalog accounts, WorkspaceRateLimit rateLimit) {
+    public AccountPasswords(AccountCatalog accounts, WorkspaceRateLimit rateLimit) {
         this.accounts = accounts;
         this.rateLimit = rateLimit;
     }
 
-    AccountCatalog.Profile register(String email, String password) {
+    public AccountCatalog.Profile register(String email, String password) {
         String normalized = email.toLowerCase(Locale.ROOT);
         return withHashSlot(() -> accounts.register(normalized, argon.encode(password)));
     }
 
-    AccountCatalog.Session login(String email, String password) {
+    public AccountCatalog.Session login(String email, String password) {
         String normalized = email.toLowerCase(Locale.ROOT);
         rateLimit.acquire(TokenDigest.sha256(normalized), WorkspaceRateLimit.Operation.LOGIN);
         return withHashSlot(() -> {
@@ -44,7 +47,7 @@ final class AccountPasswords {
         });
     }
 
-    void changePassword(UUID accountId, String currentPassword, String newPassword) {
+    public void changePassword(UUID accountId, String currentPassword, String newPassword) {
         rateLimit.acquire(accountId.toString(), WorkspaceRateLimit.Operation.LOGIN);
         withHashSlot(() -> {
             var current = accounts.credentials(accountId);
@@ -56,7 +59,7 @@ final class AccountPasswords {
         });
     }
 
-    void resetPassword(UUID accountId, String newPassword) {
+    public void resetPassword(UUID accountId, String newPassword) {
         withHashSlot(() -> {
             accounts.resetPassword(accountId, argon.encode(newPassword));
             return null;

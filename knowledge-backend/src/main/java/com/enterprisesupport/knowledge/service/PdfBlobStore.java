@@ -1,4 +1,6 @@
-package com.enterprisesupport.knowledge;
+package com.enterprisesupport.knowledge.service;
+
+import com.enterprisesupport.knowledge.config.KnowledgeProperties;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -21,7 +23,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.server.ResponseStatusException;
 
 @Component
-final class PdfBlobStore {
+public final class PdfBlobStore {
     private static final Logger LOGGER = LoggerFactory.getLogger(PdfBlobStore.class);
     private static final byte[] PDF_SIGNATURE = "%PDF-".getBytes(StandardCharsets.US_ASCII);
     private static final int BUFFER_SIZE = 64 * 1024;
@@ -30,7 +32,7 @@ final class PdfBlobStore {
     private final Path root;
     private final Path stagingDir;
 
-    PdfBlobStore(KnowledgeProperties properties) throws IOException {
+    public PdfBlobStore(KnowledgeProperties properties) throws IOException {
         var config = properties.pdfStorage();
         this.filesystem = config.isFilesystem();
         this.root = Path.of(config.directory()).toAbsolutePath().normalize();
@@ -40,11 +42,11 @@ final class PdfBlobStore {
         }
     }
 
-    boolean usesExternalStorage() {
+    public boolean usesExternalStorage() {
         return filesystem;
     }
 
-    StagedPdf stage(InputStream input) throws IOException {
+    public StagedPdf stage(InputStream input) throws IOException {
         byte[] header = input.readNBytes(PDF_SIGNATURE.length);
         if (!Arrays.equals(PDF_SIGNATURE, header)) {
             throw new ResponseStatusException(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "Expected a PDF file");
@@ -70,7 +72,7 @@ final class PdfBlobStore {
         return new StagedPdf(HexFormat.of().formatHex(sha256.digest()), null, buffer.toByteArray());
     }
 
-    String commit(UUID versionId, StagedPdf staged) throws IOException {
+    public String commit(UUID versionId, StagedPdf staged) throws IOException {
         if (!filesystem || staged.tempPath == null) {
             throw new IllegalStateException("External PDF storage is not enabled");
         }
@@ -87,7 +89,7 @@ final class PdfBlobStore {
         return key;
     }
 
-    Path resolve(String storageKey) {
+    public Path resolve(String storageKey) {
         if (storageKey == null || storageKey.isBlank()) {
             throw new IllegalArgumentException("PDF storage key must not be blank");
         }
@@ -98,14 +100,14 @@ final class PdfBlobStore {
         return target;
     }
 
-    void delete(String storageKey) throws IOException {
+    public void delete(String storageKey) throws IOException {
         if (storageKey == null || storageKey.isBlank()) {
             return;
         }
         Files.deleteIfExists(resolve(storageKey));
     }
 
-    void deleteQuietly(String storageKey) {
+    public void deleteQuietly(String storageKey) {
         try {
             delete(storageKey);
         } catch (IOException | RuntimeException error) {
@@ -141,7 +143,7 @@ final class PdfBlobStore {
         }
     }
 
-    static final class StagedPdf implements AutoCloseable {
+    public static final class StagedPdf implements AutoCloseable {
         private final String sha256;
         private final Path tempPath;
         private final byte[] bytes;
@@ -153,11 +155,11 @@ final class PdfBlobStore {
             this.bytes = bytes;
         }
 
-        String sha256() {
+        public String sha256() {
             return sha256;
         }
 
-        byte[] bytes() {
+        public byte[] bytes() {
             return bytes;
         }
 

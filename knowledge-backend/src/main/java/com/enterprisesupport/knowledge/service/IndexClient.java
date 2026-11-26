@@ -1,4 +1,7 @@
-package com.enterprisesupport.knowledge;
+package com.enterprisesupport.knowledge.service;
+
+import com.enterprisesupport.knowledge.config.KnowledgeProperties;
+import com.enterprisesupport.knowledge.repository.VersionCatalog;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -24,7 +27,7 @@ import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
 
 @Component
-final class IndexClient {
+public final class IndexClient {
     private final RestClient searchHttp;
     private final RestClient longRunningHttp;
     private final HttpClient streamHttp;
@@ -33,7 +36,7 @@ final class IndexClient {
     private final ObjectMapper mapper;
     private final PdfBlobStore blobStore;
 
-    IndexClient(RestClient.Builder builder, KnowledgeProperties properties, ObjectMapper mapper,
+    public IndexClient(RestClient.Builder builder, KnowledgeProperties properties, ObjectMapper mapper,
                 PdfBlobStore blobStore) {
         this.mapper = mapper;
         this.blobStore = blobStore;
@@ -56,10 +59,10 @@ final class IndexClient {
                 .build();
     }
 
-    record MetadataFilter(List<String> documentTypes, String productName, String productVersion) {
-        static final MetadataFilter EMPTY = new MetadataFilter(null, null, null);
+    public record MetadataFilter(List<String> documentTypes, String productName, String productVersion) {
+        public static final MetadataFilter EMPTY = new MetadataFilter(null, null, null);
 
-        String fingerprint() {
+        public String fingerprint() {
             String types = (documentTypes == null || documentTypes.isEmpty())
                     ? ""
                     : documentTypes.stream().sorted().reduce((a, b) -> a + "," + b).orElse("");
@@ -72,7 +75,7 @@ final class IndexClient {
         }
     }
 
-    void index(VersionCatalog.IndexJob job) {
+    public void index(VersionCatalog.IndexJob job) {
         JsonNode result;
         if (job.pdf() == null && job.pdfStorageKey() == null) {
             result = post(longRunningHttp, "/internal/index", new IndexRequest(
@@ -109,37 +112,37 @@ final class IndexClient {
         }
     }
 
-    JsonNode search(UUID indexId, String query, MetadataFilter filter) {
+    public JsonNode search(UUID indexId, String query, MetadataFilter filter) {
         var f = filter == null ? MetadataFilter.EMPTY : filter;
         return post(searchHttp, "/internal/search",
                 new QueryRequest(indexId, query, f.documentTypes(), f.productName(), f.productVersion()));
     }
 
-    JsonNode ask(UUID indexId, String query, MetadataFilter filter) {
+    public JsonNode ask(UUID indexId, String query, MetadataFilter filter) {
         var f = filter == null ? MetadataFilter.EMPTY : filter;
         return post(longRunningHttp, "/internal/ask",
                 new QueryRequest(indexId, query, f.documentTypes(), f.productName(), f.productVersion()));
     }
 
-    JsonNode search(List<UUID> indexIds, String query, MetadataFilter filter) {
+    public JsonNode search(List<UUID> indexIds, String query, MetadataFilter filter) {
         var f = filter == null ? MetadataFilter.EMPTY : filter;
         return post(searchHttp, "/internal/search",
                 new WorkspaceQueryRequest(indexIds, query, f.documentTypes(), f.productName(), f.productVersion()));
     }
 
-    JsonNode ask(List<UUID> indexIds, String query, MetadataFilter filter) {
+    public JsonNode ask(List<UUID> indexIds, String query, MetadataFilter filter) {
         var f = filter == null ? MetadataFilter.EMPTY : filter;
         return post(longRunningHttp, "/internal/ask",
                 new WorkspaceQueryRequest(indexIds, query, f.documentTypes(), f.productName(), f.productVersion()));
     }
 
-    void streamAsk(UUID indexId, String query, MetadataFilter filter, OutputStream out) throws IOException {
+    public void streamAsk(UUID indexId, String query, MetadataFilter filter, OutputStream out) throws IOException {
         var f = filter == null ? MetadataFilter.EMPTY : filter;
         streamPost("/internal/ask/stream",
                 new QueryRequest(indexId, query, f.documentTypes(), f.productName(), f.productVersion()), out);
     }
 
-    void streamAsk(List<UUID> indexIds, String query, MetadataFilter filter, OutputStream out) throws IOException {
+    public void streamAsk(List<UUID> indexIds, String query, MetadataFilter filter, OutputStream out) throws IOException {
         var f = filter == null ? MetadataFilter.EMPTY : filter;
         streamPost("/internal/ask/stream",
                 new WorkspaceQueryRequest(indexIds, query, f.documentTypes(), f.productName(), f.productVersion()), out);
@@ -174,7 +177,7 @@ final class IndexClient {
         }
     }
 
-    void purge(UUID indexId) {
+    public void purge(UUID indexId) {
         post(searchHttp, "/internal/index/purge", new PurgeRequest(indexId));
     }
 
@@ -213,19 +216,19 @@ final class IndexClient {
     private record PurgeRequest(UUID indexId) {
     }
 
-    static final class Failure extends RuntimeException {
+    public static final class Failure extends RuntimeException {
         private final int status;
 
-        Failure(String message, int status) {
+        public Failure(String message, int status) {
             super(message);
             this.status = status;
         }
 
-        int status() {
+        public int status() {
             return status;
         }
 
-        boolean retryable() {
+        public boolean retryable() {
             return status == 408 || status == 429 || status >= 500;
         }
     }

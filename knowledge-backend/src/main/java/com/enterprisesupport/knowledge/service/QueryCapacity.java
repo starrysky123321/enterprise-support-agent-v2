@@ -1,4 +1,6 @@
-package com.enterprisesupport.knowledge;
+package com.enterprisesupport.knowledge.service;
+
+import com.enterprisesupport.knowledge.config.KnowledgeProperties;
 
 import io.micrometer.core.instrument.MeterRegistry;
 import java.util.concurrent.Semaphore;
@@ -6,24 +8,24 @@ import java.util.function.Supplier;
 import org.springframework.stereotype.Component;
 
 @Component
-final class QueryCapacity {
+public final class QueryCapacity {
     private final Semaphore searches;
     private final Semaphore answers;
     private final MeterRegistry metrics;
     private final WorkspaceRateLimit rateLimit;
 
-    QueryCapacity(KnowledgeProperties properties, MeterRegistry metrics, WorkspaceRateLimit rateLimit) {
+    public QueryCapacity(KnowledgeProperties properties, MeterRegistry metrics, WorkspaceRateLimit rateLimit) {
         searches = new Semaphore(properties.searchConcurrency());
         answers = new Semaphore(properties.askConcurrency());
         this.metrics = metrics;
         this.rateLimit = rateLimit;
     }
 
-    <T> T search(String workspace, Supplier<T> task) {
+    public <T> T search(String workspace, Supplier<T> task) {
         return run(searches, workspace, WorkspaceRateLimit.Operation.SEARCH, task);
     }
 
-    <T> T answer(String workspace, Supplier<T> task) {
+    public <T> T answer(String workspace, Supplier<T> task) {
         return run(answers, workspace, WorkspaceRateLimit.Operation.ASK, task);
     }
 

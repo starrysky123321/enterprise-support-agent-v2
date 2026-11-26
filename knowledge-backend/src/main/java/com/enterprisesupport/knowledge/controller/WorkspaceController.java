@@ -1,7 +1,10 @@
-package com.enterprisesupport.knowledge;
+package com.enterprisesupport.knowledge.controller;
 
-import static com.enterprisesupport.knowledge.AccessGrant.ATTRIBUTE;
-import static com.enterprisesupport.knowledge.AccessGrant.RESOURCE_ID;
+import com.enterprisesupport.knowledge.repository.WorkspaceCatalog;
+import com.enterprisesupport.knowledge.security.AccessGrant;
+
+import static com.enterprisesupport.knowledge.security.AccessGrant.ATTRIBUTE;
+import static com.enterprisesupport.knowledge.security.AccessGrant.RESOURCE_ID;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
@@ -27,28 +30,28 @@ import org.springframework.web.server.ResponseStatusException;
 @RestController
 @ConditionalOnProperty(name = "knowledge.api-enabled", havingValue = "true", matchIfMissing = true)
 @RequestMapping("/api/knowledge/workspaces")
-final class WorkspaceController {
+public final class WorkspaceController {
     private final WorkspaceCatalog workspaces;
 
-    WorkspaceController(WorkspaceCatalog workspaces) {
+    public WorkspaceController(WorkspaceCatalog workspaces) {
         this.workspaces = workspaces;
     }
 
     @GetMapping
-    List<WorkspaceCatalog.Workspace> list(@RequestAttribute(ATTRIBUTE) AccessGrant grant) {
+    public List<WorkspaceCatalog.Workspace> list(@RequestAttribute(ATTRIBUTE) AccessGrant grant) {
         return workspaces.visibleTo(grant);
     }
 
     @PutMapping("/{workspaceId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    void create(@RequestAttribute(ATTRIBUTE) AccessGrant grant,
+    public void create(@RequestAttribute(ATTRIBUTE) AccessGrant grant,
                 @PathVariable @Pattern(regexp = RESOURCE_ID) String workspaceId) {
         grant.requireAdmin();
         workspaces.create(workspaceId);
     }
 
     @GetMapping("/{workspaceId}/keys")
-    List<WorkspaceCatalog.KeySummary> listKeys(
+    public List<WorkspaceCatalog.KeySummary> listKeys(
             @RequestAttribute(ATTRIBUTE) AccessGrant grant,
             @PathVariable @Pattern(regexp = RESOURCE_ID) String workspaceId) {
         grant.requireAdmin();
@@ -57,7 +60,7 @@ final class WorkspaceController {
     }
 
     @PostMapping("/{workspaceId}/keys")
-    ResponseEntity<WorkspaceCatalog.IssuedKey> issue(
+    public ResponseEntity<WorkspaceCatalog.IssuedKey> issue(
             @RequestAttribute(ATTRIBUTE) AccessGrant grant,
             @PathVariable @Pattern(regexp = RESOURCE_ID) String workspaceId, @Valid @RequestBody KeyRequest request) {
         grant.requireAdmin();
@@ -69,14 +72,14 @@ final class WorkspaceController {
 
     @DeleteMapping("/{workspaceId}/keys/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    void revoke(@RequestAttribute(ATTRIBUTE) AccessGrant grant,
+    public void revoke(@RequestAttribute(ATTRIBUTE) AccessGrant grant,
                 @PathVariable @Pattern(regexp = RESOURCE_ID) String workspaceId, @PathVariable UUID id) {
         grant.requireAdmin();
         workspaces.revoke(workspaceId, id);
     }
 
     @GetMapping("/{workspaceId}/members")
-    List<WorkspaceCatalog.Member> members(@RequestAttribute(ATTRIBUTE) AccessGrant grant,
+    public List<WorkspaceCatalog.Member> members(@RequestAttribute(ATTRIBUTE) AccessGrant grant,
                                          @PathVariable @Pattern(regexp = RESOURCE_ID) String workspaceId) {
         grant.requireAdmin();
         requireExists(workspaceId);
@@ -85,7 +88,7 @@ final class WorkspaceController {
 
     @PutMapping("/{workspaceId}/members/{accountId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    void putMember(@RequestAttribute(ATTRIBUTE) AccessGrant grant,
+    public void putMember(@RequestAttribute(ATTRIBUTE) AccessGrant grant,
                    @PathVariable @Pattern(regexp = RESOURCE_ID) String workspaceId, @PathVariable UUID accountId,
                    @Valid @RequestBody KeyRequest request) {
         grant.requireAdmin();
@@ -96,7 +99,7 @@ final class WorkspaceController {
 
     @DeleteMapping("/{workspaceId}/members/{accountId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    void removeMember(@RequestAttribute(ATTRIBUTE) AccessGrant grant,
+    public void removeMember(@RequestAttribute(ATTRIBUTE) AccessGrant grant,
                       @PathVariable @Pattern(regexp = RESOURCE_ID) String workspaceId, @PathVariable UUID accountId) {
         grant.requireAdmin();
         workspaces.removeMember(workspaceId, accountId);
@@ -114,6 +117,6 @@ final class WorkspaceController {
         }
     }
 
-    record KeyRequest(@NotNull AccessGrant.Role role) {
+    public record KeyRequest(@NotNull AccessGrant.Role role) {
     }
 }

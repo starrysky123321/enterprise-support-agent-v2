@@ -1,6 +1,12 @@
-package com.enterprisesupport.knowledge;
+package com.enterprisesupport.knowledge.controller;
 
-import static com.enterprisesupport.knowledge.AccessGrant.ATTRIBUTE;
+import com.enterprisesupport.knowledge.repository.AccountCatalog;
+import com.enterprisesupport.knowledge.security.AccessGrant;
+import com.enterprisesupport.knowledge.security.ApiTokenFilter;
+import com.enterprisesupport.knowledge.service.AccountPasswords;
+import com.enterprisesupport.knowledge.service.WorkspaceRateLimit;
+
+import static com.enterprisesupport.knowledge.security.AccessGrant.ATTRIBUTE;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -37,23 +43,23 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/knowledge")
 @ConditionalOnProperty(name = "knowledge.api-enabled", havingValue = "true", matchIfMissing = true)
-final class AccountController {
+public final class AccountController {
     private final AccountCatalog accounts;
     private final AccountPasswords passwords;
 
-    AccountController(AccountCatalog accounts, AccountPasswords passwords) {
+    public AccountController(AccountCatalog accounts, AccountPasswords passwords) {
         this.accounts = accounts;
         this.passwords = passwords;
     }
 
     @PostMapping("/auth/register")
-    ResponseEntity<AccountCatalog.Profile> register(@Valid @RequestBody Registration request) {
+    public ResponseEntity<AccountCatalog.Profile> register(@Valid @RequestBody Registration request) {
         return ResponseEntity.status(HttpStatus.CREATED).cacheControl(CacheControl.noStore())
                 .body(passwords.register(request.email(), request.password()));
     }
 
     @PostMapping("/auth/login")
-    ResponseEntity<AccountCatalog.Session> login(@Valid @RequestBody Login request, HttpServletRequest http) {
+    public ResponseEntity<AccountCatalog.Session> login(@Valid @RequestBody Login request, HttpServletRequest http) {
         var session = passwords.login(request.email(), request.password());
         return ResponseEntity.ok()
                 .cacheControl(CacheControl.noStore())
@@ -62,7 +68,7 @@ final class AccountController {
     }
 
     @PostMapping("/auth/logout")
-    ResponseEntity<Void> logout(@RequestAttribute(ATTRIBUTE) AccessGrant grant, HttpServletRequest http) {
+    public ResponseEntity<Void> logout(@RequestAttribute(ATTRIBUTE) AccessGrant grant, HttpServletRequest http) {
         grant.requireAccount();
         accounts.logout(grant.sessionId());
         return ResponseEntity.noContent()
@@ -71,12 +77,12 @@ final class AccountController {
     }
 
     @GetMapping("/users/me")
-    ResponseEntity<AccountCatalog.Profile> profile(@RequestAttribute(ATTRIBUTE) AccessGrant grant) {
+    public ResponseEntity<AccountCatalog.Profile> profile(@RequestAttribute(ATTRIBUTE) AccessGrant grant) {
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(accounts.profile(grant.requireAccount()));
     }
 
     @PutMapping("/users/me/password")
-    ResponseEntity<Void> changePassword(@RequestAttribute(ATTRIBUTE) AccessGrant grant,
+    public ResponseEntity<Void> changePassword(@RequestAttribute(ATTRIBUTE) AccessGrant grant,
                                         @Valid @RequestBody PasswordChange request, HttpServletRequest http) {
         passwords.changePassword(grant.requireAccount(), request.currentPassword(), request.newPassword());
         return ResponseEntity.noContent()
@@ -96,7 +102,7 @@ final class AccountController {
     }
 
     @GetMapping("/users")
-    AccountPage list(@RequestAttribute(ATTRIBUTE) AccessGrant grant, @RequestParam(required = false) UUID after,
+    public AccountPage list(@RequestAttribute(ATTRIBUTE) AccessGrant grant, @RequestParam(required = false) UUID after,
                      @RequestParam(defaultValue = "50") @Min(1) @Max(100) int limit) {
         grant.requireAdmin();
         var rows = accounts.list(after, limit + 1);
@@ -105,14 +111,14 @@ final class AccountController {
     }
 
     @PutMapping("/users/{accountId}/status")
-    AccountCatalog.Profile setActive(@RequestAttribute(ATTRIBUTE) AccessGrant grant, @PathVariable UUID accountId,
+    public AccountCatalog.Profile setActive(@RequestAttribute(ATTRIBUTE) AccessGrant grant, @PathVariable UUID accountId,
                                      @Valid @RequestBody Status request) {
         grant.requireAdmin();
         return accounts.setActive(accountId, request.active());
     }
 
     @PutMapping("/users/{accountId}/department")
-    AccountCatalog.Profile setDepartment(@RequestAttribute(ATTRIBUTE) AccessGrant grant, @PathVariable UUID accountId,
+    public AccountCatalog.Profile setDepartment(@RequestAttribute(ATTRIBUTE) AccessGrant grant, @PathVariable UUID accountId,
                                          @Valid @RequestBody Department request) {
         grant.requireAdmin();
         return accounts.setDepartment(accountId, request.department());
@@ -120,45 +126,45 @@ final class AccountController {
 
     @PutMapping("/users/{accountId}/password")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    void resetPassword(@RequestAttribute(ATTRIBUTE) AccessGrant grant, @PathVariable UUID accountId,
+    public void resetPassword(@RequestAttribute(ATTRIBUTE) AccessGrant grant, @PathVariable UUID accountId,
                        @Valid @RequestBody PasswordReset request) {
         grant.requireAdmin();
         passwords.resetPassword(accountId, request.newPassword());
     }
 
     @ExceptionHandler(WorkspaceRateLimit.Rejected.class)
-    ResponseEntity<ProblemDetail> quotaRejected(WorkspaceRateLimit.Rejected rejection) {
+    public ResponseEntity<ProblemDetail> quotaRejected(WorkspaceRateLimit.Rejected rejection) {
         return ResponseEntity.status(rejection.status).header(HttpHeaders.RETRY_AFTER, Long.toString(rejection.retryAfter))
                 .body(ProblemDetail.forStatusAndDetail(rejection.status, rejection.getMessage()));
     }
 
     @ExceptionHandler({MethodArgumentNotValidException.class, HttpMessageNotReadableException.class})
-    ResponseEntity<ProblemDetail> invalidRequest() {
+    public ResponseEntity<ProblemDetail> invalidRequest() {
         return ResponseEntity.badRequest()
                 .body(ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Invalid account request"));
     }
 
-    record Registration(@NotBlank @Email @Size(max = 320) String email,
+    public record Registration(@NotBlank @Email @Size(max = 320) String email,
                         @NotBlank @Size(min = 12, max = 256) String password) {
     }
 
-    record Login(@NotBlank @Email @Size(max = 320) String email,
+    public record Login(@NotBlank @Email @Size(max = 320) String email,
                  @NotBlank @Size(max = 1024) String password) {
     }
 
-    record PasswordChange(@NotBlank @Size(max = 1024) String currentPassword,
+    public record PasswordChange(@NotBlank @Size(max = 1024) String currentPassword,
                           @NotBlank @Size(min = 12, max = 256) String newPassword) {
     }
 
-    record PasswordReset(@NotBlank @Size(min = 12, max = 256) String newPassword) {
+    public record PasswordReset(@NotBlank @Size(min = 12, max = 256) String newPassword) {
     }
 
-    record Status(@NotNull Boolean active) {
+    public record Status(@NotNull Boolean active) {
     }
 
-    record Department(@Size(max = 255) String department) {
+    public record Department(@Size(max = 255) String department) {
     }
 
-    record AccountPage(List<AccountCatalog.Profile> items, UUID nextCursor) {
+    public record AccountPage(List<AccountCatalog.Profile> items, UUID nextCursor) {
     }
 }

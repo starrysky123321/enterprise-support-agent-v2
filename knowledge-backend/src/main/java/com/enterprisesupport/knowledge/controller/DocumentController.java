@@ -1,7 +1,17 @@
-package com.enterprisesupport.knowledge;
+package com.enterprisesupport.knowledge.controller;
 
-import static com.enterprisesupport.knowledge.AccessGrant.ATTRIBUTE;
-import static com.enterprisesupport.knowledge.AccessGrant.RESOURCE_ID;
+import com.enterprisesupport.knowledge.config.KnowledgeProperties;
+import com.enterprisesupport.knowledge.repository.VersionCatalog;
+import com.enterprisesupport.knowledge.repository.WorkspaceCatalog;
+import com.enterprisesupport.knowledge.security.AccessGrant;
+import com.enterprisesupport.knowledge.service.IndexClient;
+import com.enterprisesupport.knowledge.service.PdfBlobStore;
+import com.enterprisesupport.knowledge.service.QueryCapacity;
+import com.enterprisesupport.knowledge.service.SearchResultCache;
+import com.enterprisesupport.knowledge.service.WorkspaceRateLimit;
+
+import static com.enterprisesupport.knowledge.security.AccessGrant.ATTRIBUTE;
+import static com.enterprisesupport.knowledge.security.AccessGrant.RESOURCE_ID;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -45,7 +55,7 @@ import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBo
 @RestController
 @ConditionalOnProperty(name = "knowledge.api-enabled", havingValue = "true", matchIfMissing = true)
 @RequestMapping({"/api/knowledge", "/api/knowledge/workspaces/{workspaceId}"})
-final class DocumentController {
+public final class DocumentController {
     private static final String DOCUMENT = "/documents/{documentId}";
     private final VersionCatalog catalog;
     private final WorkspaceCatalog workspaces;
@@ -56,7 +66,7 @@ final class DocumentController {
     private final ObjectMapper mapper;
     private final Semaphore pdfUploads;
 
-    DocumentController(VersionCatalog catalog, WorkspaceCatalog workspaces, IndexClient index,
+    public DocumentController(VersionCatalog catalog, WorkspaceCatalog workspaces, IndexClient index,
                        QueryCapacity capacity, SearchResultCache searchCache, PdfBlobStore blobStore,
                        ObjectMapper mapper, KnowledgeProperties properties) {
         this.catalog = catalog;
@@ -71,7 +81,7 @@ final class DocumentController {
 
     @PostMapping(path = DOCUMENT + "/versions", consumes = MediaType.APPLICATION_JSON_VALUE)
     @ResponseStatus(HttpStatus.ACCEPTED)
-    VersionCatalog.VersionStatus submit(
+    public VersionCatalog.VersionStatus submit(
             @RequestAttribute(ATTRIBUTE) AccessGrant grant,
             @PathVariable(required = false) @Pattern(regexp = RESOURCE_ID) String workspaceId,
             @PathVariable @Pattern(regexp = RESOURCE_ID) String documentId, @Valid @RequestBody Upload request) {
@@ -84,7 +94,7 @@ final class DocumentController {
 
     @PostMapping(path = DOCUMENT + "/versions/pdf", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @ResponseStatus(HttpStatus.ACCEPTED)
-    VersionCatalog.VersionStatus submitPdf(
+    public VersionCatalog.VersionStatus submitPdf(
             @RequestAttribute(ATTRIBUTE) AccessGrant grant,
             @PathVariable(required = false) @Pattern(regexp = RESOURCE_ID) String workspaceId,
             @PathVariable @Pattern(regexp = RESOURCE_ID) String documentId,
@@ -115,7 +125,7 @@ final class DocumentController {
     }
 
     @GetMapping("/documents")
-    DocumentPage list(
+    public DocumentPage list(
             @RequestAttribute(ATTRIBUTE) AccessGrant grant,
             @PathVariable(required = false) @Pattern(regexp = RESOURCE_ID) String workspaceId,
             @RequestParam(defaultValue = "") @Pattern(regexp = "(?:" + RESOURCE_ID + ")?") String after,
@@ -128,7 +138,7 @@ final class DocumentController {
 
     @DeleteMapping(DOCUMENT)
     @ResponseStatus(HttpStatus.ACCEPTED)
-    void delete(
+    public void delete(
             @RequestAttribute(ATTRIBUTE) AccessGrant grant,
             @PathVariable(required = false) @Pattern(regexp = RESOURCE_ID) String workspaceId,
             @PathVariable @Pattern(regexp = RESOURCE_ID) String documentId) {
@@ -136,7 +146,7 @@ final class DocumentController {
     }
 
     @GetMapping(DOCUMENT + "/versions/{version}")
-    VersionCatalog.VersionStatus status(
+    public VersionCatalog.VersionStatus status(
             @RequestAttribute(ATTRIBUTE) AccessGrant grant,
             @PathVariable(required = false) @Pattern(regexp = RESOURCE_ID) String workspaceId,
             @PathVariable @Pattern(regexp = RESOURCE_ID) String documentId, @PathVariable @Positive long version) {
@@ -146,7 +156,7 @@ final class DocumentController {
 
     @PostMapping(DOCUMENT + "/versions/{version}/retry")
     @ResponseStatus(HttpStatus.ACCEPTED)
-    VersionCatalog.VersionStatus retry(
+    public VersionCatalog.VersionStatus retry(
             @RequestAttribute(ATTRIBUTE) AccessGrant grant,
             @PathVariable(required = false) @Pattern(regexp = RESOURCE_ID) String workspaceId,
             @PathVariable @Pattern(regexp = RESOURCE_ID) String documentId, @PathVariable @Positive long version) {
@@ -155,7 +165,7 @@ final class DocumentController {
     }
 
     @PostMapping(path = DOCUMENT + "/search", consumes = MediaType.APPLICATION_JSON_VALUE)
-    QueryResult search(
+    public QueryResult search(
             @RequestAttribute(ATTRIBUTE) AccessGrant grant,
             @PathVariable(required = false) @Pattern(regexp = RESOURCE_ID) String workspaceId,
             @PathVariable @Pattern(regexp = RESOURCE_ID) String documentId, @Valid @RequestBody Query request) {
@@ -170,7 +180,7 @@ final class DocumentController {
     }
 
     @PostMapping(path = DOCUMENT + "/ask", consumes = MediaType.APPLICATION_JSON_VALUE)
-    QueryResult ask(
+    public QueryResult ask(
             @RequestAttribute(ATTRIBUTE) AccessGrant grant,
             @PathVariable(required = false) @Pattern(regexp = RESOURCE_ID) String workspaceId,
             @PathVariable @Pattern(regexp = RESOURCE_ID) String documentId, @Valid @RequestBody Query request) {
@@ -184,7 +194,7 @@ final class DocumentController {
     }
 
     @PostMapping(path = "/search", consumes = MediaType.APPLICATION_JSON_VALUE)
-    WorkspaceResult searchWorkspace(
+    public WorkspaceResult searchWorkspace(
             @RequestAttribute(ATTRIBUTE) AccessGrant grant,
             @PathVariable(required = false) @Pattern(regexp = RESOURCE_ID) String workspaceId,
             @Valid @RequestBody Query request) {
@@ -193,7 +203,7 @@ final class DocumentController {
     }
 
     @PostMapping(path = "/ask", consumes = MediaType.APPLICATION_JSON_VALUE)
-    WorkspaceResult askWorkspace(
+    public WorkspaceResult askWorkspace(
             @RequestAttribute(ATTRIBUTE) AccessGrant grant,
             @PathVariable(required = false) @Pattern(regexp = RESOURCE_ID) String workspaceId,
             @Valid @RequestBody Query request) {
@@ -203,7 +213,7 @@ final class DocumentController {
 
     @PostMapping(path = DOCUMENT + "/ask/stream", consumes = MediaType.APPLICATION_JSON_VALUE,
             produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    ResponseEntity<StreamingResponseBody> askStream(
+    public ResponseEntity<StreamingResponseBody> askStream(
             @RequestAttribute(ATTRIBUTE) AccessGrant grant,
             @PathVariable(required = false) @Pattern(regexp = RESOURCE_ID) String workspaceId,
             @PathVariable @Pattern(regexp = RESOURCE_ID) String documentId, @Valid @RequestBody Query request) {
@@ -226,7 +236,7 @@ final class DocumentController {
 
     @PostMapping(path = "/ask/stream", consumes = MediaType.APPLICATION_JSON_VALUE,
             produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    ResponseEntity<StreamingResponseBody> askWorkspaceStream(
+    public ResponseEntity<StreamingResponseBody> askWorkspaceStream(
             @RequestAttribute(ATTRIBUTE) AccessGrant grant,
             @PathVariable(required = false) @Pattern(regexp = RESOURCE_ID) String workspaceId,
             @Valid @RequestBody Query request) {
@@ -284,13 +294,13 @@ final class DocumentController {
     }
 
     @ExceptionHandler(WorkspaceRateLimit.Rejected.class)
-    ResponseEntity<ProblemDetail> quotaRejected(WorkspaceRateLimit.Rejected rejection) {
+    public ResponseEntity<ProblemDetail> quotaRejected(WorkspaceRateLimit.Rejected rejection) {
         return ResponseEntity.status(rejection.status).header(HttpHeaders.RETRY_AFTER, Long.toString(rejection.retryAfter))
                 .body(ProblemDetail.forStatusAndDetail(rejection.status, rejection.getMessage()));
     }
 
     @ExceptionHandler(IndexClient.Failure.class)
-    ResponseEntity<ProblemDetail> indexUnavailable(IndexClient.Failure failure) {
+    public ResponseEntity<ProblemDetail> indexUnavailable(IndexClient.Failure failure) {
         if (failure.status() == 429 || failure.status() == 503) {
             return unavailable(failure.getMessage());
         }
@@ -299,7 +309,7 @@ final class DocumentController {
     }
 
     @ExceptionHandler(CannotGetJdbcConnectionException.class)
-    ResponseEntity<ProblemDetail> databaseUnavailable() {
+    public ResponseEntity<ProblemDetail> databaseUnavailable() {
         return unavailable("Database capacity unavailable");
     }
 
@@ -325,13 +335,13 @@ final class DocumentController {
         return trimmed.isEmpty() ? null : trimmed;
     }
 
-    record Upload(@NotBlank @Size(max = 100_000) @Pattern(regexp = "[^\\x00]*") String text,
+    public record Upload(@NotBlank @Size(max = 100_000) @Pattern(regexp = "[^\\x00]*") String text,
                   @Size(max = 32) String documentType,
                   @Size(max = 128) String productName,
                   @Size(max = 64) String productVersion) {
     }
 
-    record Query(@NotBlank @Size(max = 4096) String query,
+    public record Query(@NotBlank @Size(max = 4096) String query,
                  List<@Size(max = 32) String> documentTypes,
                  @Size(max = 128) String productName,
                  @Size(max = 64) String productVersion) {
@@ -347,12 +357,12 @@ final class DocumentController {
         }
     }
 
-    record QueryResult(String documentId, long version, JsonNode result) {
+    public record QueryResult(String documentId, long version, JsonNode result) {
     }
 
-    record DocumentPage(List<VersionCatalog.DocumentSummary> items, String nextCursor) {
+    public record DocumentPage(List<VersionCatalog.DocumentSummary> items, String nextCursor) {
     }
 
-    record WorkspaceResult(String workspaceId, JsonNode result, List<VersionCatalog.PublishedDocument> documents) {
+    public record WorkspaceResult(String workspaceId, JsonNode result, List<VersionCatalog.PublishedDocument> documents) {
     }
 }

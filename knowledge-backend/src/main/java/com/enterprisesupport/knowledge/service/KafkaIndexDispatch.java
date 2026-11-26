@@ -1,4 +1,7 @@
-package com.enterprisesupport.knowledge;
+package com.enterprisesupport.knowledge.service;
+
+import com.enterprisesupport.knowledge.config.KnowledgeProperties;
+import com.enterprisesupport.knowledge.repository.IndexOutbox;
 
 import io.micrometer.core.instrument.MeterRegistry;
 import java.util.concurrent.ExecutionException;
@@ -19,23 +22,23 @@ import org.springframework.util.backoff.FixedBackOff;
 
 @Component
 @ConditionalOnProperty(name = "knowledge.kafka-enabled", havingValue = "true")
-final class KafkaIndexDispatch {
-    static final String TOPIC = "knowledge.index.requested.v1";
-    static final String DEAD_LETTER_TOPIC = TOPIC + ".DLT";
-    static final String GROUP = "knowledge-index-workers-v1";
+public final class KafkaIndexDispatch {
+    public static final String TOPIC = "knowledge.index.requested.v1";
+    public static final String DEAD_LETTER_TOPIC = TOPIC + ".DLT";
+    public static final String GROUP = "knowledge-index-workers-v1";
 
     private final IndexOutbox outbox;
     private final KafkaTemplate<String, String> kafka;
     private final MeterRegistry metrics;
 
-    KafkaIndexDispatch(IndexOutbox outbox, KafkaTemplate<String, String> kafka, MeterRegistry metrics) {
+    public KafkaIndexDispatch(IndexOutbox outbox, KafkaTemplate<String, String> kafka, MeterRegistry metrics) {
         this.outbox = outbox;
         this.kafka = kafka;
         this.metrics = metrics;
     }
 
     @Scheduled(fixedDelayString = "${knowledge.outbox-poll-ms:150}")
-    void relay() {
+    public void relay() {
         boolean unavailable = false;
         for (var message : outbox.claimBatch()) {
             if (!unavailable) {
@@ -59,12 +62,12 @@ final class KafkaIndexDispatch {
     }
 
     @Bean
-    static NewTopic indexRequests(KnowledgeProperties config) {
+    public static NewTopic indexRequests(KnowledgeProperties config) {
         return topic(TOPIC, config);
     }
 
     @Bean
-    static NewTopic indexDeadLetters(KnowledgeProperties config) {
+    public static NewTopic indexDeadLetters(KnowledgeProperties config) {
         return topic(DEAD_LETTER_TOPIC, config);
     }
 
@@ -73,7 +76,7 @@ final class KafkaIndexDispatch {
     }
 
     @Bean
-    static DefaultErrorHandler indexEventErrorHandler(KafkaTemplate<String, String> kafka) {
+    public static DefaultErrorHandler indexEventErrorHandler(KafkaTemplate<String, String> kafka) {
         var recoverer = new DeadLetterPublishingRecoverer(kafka,
                 (record, error) -> new TopicPartition(DEAD_LETTER_TOPIC, record.partition()));
         recoverer.setFailIfSendResultIsError(true);

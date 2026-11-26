@@ -1,4 +1,4 @@
-package com.enterprisesupport.knowledge;
+package com.enterprisesupport.knowledge.repository;
 
 import java.util.List;
 import java.util.UUID;
@@ -6,17 +6,17 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 
 @Repository
-class IndexOutbox {
+public class IndexOutbox {
     private final JdbcClient db;
 
-    IndexOutbox(JdbcClient db) {
+    public IndexOutbox(JdbcClient db) {
         this.db = db;
     }
 
-    record Message(long id, UUID jobId, int dispatchAttempt) {
+    public record Message(long id, UUID jobId, int dispatchAttempt) {
     }
 
-    void add(UUID jobId) {
+    public void add(UUID jobId) {
         db.sql("""
                 WITH scheduled AS (
                     UPDATE knowledge_backend.document_versions SET last_enqueued_at = now()
@@ -27,7 +27,7 @@ class IndexOutbox {
                 """).param("jobId", jobId).update();
     }
 
-    List<Message> claimBatch() {
+    public List<Message> claimBatch() {
         return db.sql("""
                 WITH ready AS (
                     SELECT id FROM knowledge_backend.index_outbox
@@ -41,12 +41,12 @@ class IndexOutbox {
                 """).query(Message.class).list();
     }
 
-    void acknowledge(Message message) {
+    public void acknowledge(Message message) {
         db.sql("DELETE FROM knowledge_backend.index_outbox WHERE id = :id AND dispatch_attempt = :attempt")
                 .param("id", message.id()).param("attempt", message.dispatchAttempt()).update();
     }
 
-    void defer(Message message) {
+    public void defer(Message message) {
         int delay = 1 << Math.min(5, message.dispatchAttempt() - 1);
         db.sql("""
                 UPDATE knowledge_backend.index_outbox

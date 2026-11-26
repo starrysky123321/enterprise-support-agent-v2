@@ -1,4 +1,7 @@
-package com.enterprisesupport.knowledge;
+package com.enterprisesupport.knowledge.service;
+
+import com.enterprisesupport.knowledge.config.KnowledgeProperties;
+import com.enterprisesupport.knowledge.repository.VersionCatalog;
 
 import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.annotation.PreDestroy;
@@ -17,7 +20,7 @@ import org.springframework.stereotype.Component;
 
 @Component
 @ConditionalOnProperty(name = "knowledge.worker-enabled", havingValue = "true", matchIfMissing = true)
-final class PublicationWorker {
+public final class PublicationWorker {
     private static final Logger LOGGER = LoggerFactory.getLogger(PublicationWorker.class);
     private final VersionCatalog catalog;
     private final IndexClient index;
@@ -28,7 +31,7 @@ final class PublicationWorker {
     private final Semaphore slots;
     private volatile boolean stopping;
 
-    PublicationWorker(VersionCatalog catalog, IndexClient index, PdfBlobStore blobStore,
+    public PublicationWorker(VersionCatalog catalog, IndexClient index, PdfBlobStore blobStore,
                       KnowledgeProperties properties, MeterRegistry metrics) {
         this.catalog = catalog;
         this.index = index;
@@ -40,7 +43,7 @@ final class PublicationWorker {
     }
 
     @Scheduled(fixedDelayString = "${knowledge.poll-delay-ms:500}")
-    void poll() {
+    public void poll() {
         int expired = catalog.failExpired(properties.maxAttempts());
         if (expired > 0) {
             metrics.counter("knowledge.index.jobs", "result", "lease_expired").increment(expired);
@@ -68,7 +71,7 @@ final class PublicationWorker {
 
     @KafkaListener(topics = KafkaIndexDispatch.TOPIC, groupId = KafkaIndexDispatch.GROUP,
             autoStartup = "${knowledge.kafka-enabled:false}", concurrency = "${knowledge.worker-concurrency:4}")
-    void consume(String jobId) {
+    public void consume(String jobId) {
         var job = catalog.claimDispatched(UUID.fromString(jobId));
         if (job.isPresent()) {
             process(job.get());
@@ -78,7 +81,7 @@ final class PublicationWorker {
     }
 
     @Scheduled(fixedDelayString = "${knowledge.purge-poll-ms:500}")
-    void purgeRetiredVersion() {
+    public void purgeRetiredVersion() {
         catalog.claimPurge().ifPresent(job -> {
             try {
                 index.purge(job.id());
@@ -125,7 +128,7 @@ final class PublicationWorker {
     }
 
     @PreDestroy
-    void shutdown() throws InterruptedException {
+    public void shutdown() throws InterruptedException {
         stopping = true;
         workers.shutdown();
         if (!workers.awaitTermination(65, TimeUnit.SECONDS)) {
