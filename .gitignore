@@ -1,0 +1,26 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+.env
+/.env.knowledge
+data/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.vscode/
+/test.db
+/evaluation.db
+/cookies.txt
+
+# Local-only project notes and generated evaluation output
+/docs/implementation-plan.md
+/docs/resume-and-interview.md
+/eval/reports/

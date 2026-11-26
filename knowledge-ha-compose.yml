@@ -1,0 +1,258 @@
+# Use with knowledge-compose.yml on an isolated project and new volumes.
+x-etcd: &etcd
+  image: quay.io/coreos/etcd:v3.6.6
+  restart: unless-stopped
+  environment: &etcd-env
+    ETCD_LISTEN_CLIENT_URLS: http://0.0.0.0:2379
+    ETCD_LISTEN_PEER_URLS: http://0.0.0.0:2380
+    ETCD_INITIAL_CLUSTER: etcd-1=http://etcd-1:2380,etcd-2=http://etcd-2:2380,etcd-3=http://etcd-3:2380
+    ETCD_INITIAL_CLUSTER_STATE: new
+    ETCD_INITIAL_CLUSTER_TOKEN: knowledge-postgres-ha
+    ETCD_DATA_DIR: /var/lib/etcd
+
+x-patroni: &patroni
+  image: enterprise-knowledge-postgres-ha:local
+  build:
+    context: ./knowledge-backend/ha
+    dockerfile: postgres.Dockerfile
+  restart: unless-stopped
+  depends_on: [etcd-1, etcd-2, etcd-3]
+  environment: &patroni-env
+    PATRONI_SUPERUSER_PASSWORD: ${KNOWLEDGE_DATABASE_PASSWORD:?set the knowledge database password}
+    PATRONI_REPLICATION_PASSWORD: ${KNOWLEDGE_HA_REPLICATION_PASSWORD:?set the PostgreSQL replication password}
+
+x-kafka-ha-env: &kafka-ha-env
+  CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+  KAFKA_PROCESS_ROLES: broker,controller
+  KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093,2@kafka-2:9093,3@kafka-3:9093
+  KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+  KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+  KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+  KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+  KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'false'
+  KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+  KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
+  KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
+  KAFKA_DEFAULT_REPLICATION_FACTOR: 3
+  KAFKA_MIN_INSYNC_REPLICAS: 2
+  KAFKA_NUM_PARTITIONS: 12
+  KAFKA_LOG_DIRS: /var/lib/kafka/data
+  KAFKA_HEAP_OPTS: -Xms192m -Xmx384m
+
+x-kafka-ha: &kafka-ha
+  image: apache/kafka:4.2.2
+  restart: unless-stopped
+  healthcheck:
+    test: ["CMD", "/opt/kafka/bin/kafka-topics.sh", "--bootstrap-server", "localhost:9092", "--list"]
+    interval: 15s
+    timeout: 8s
+    retries: 12
+
+x-redis-node: &redis-node
+  image: redis:7.4-alpine
+  restart: unless-stopped
+  entrypoint: ["sh", "/etc/redis-node.sh"]
+
+x-sentinel: &sentinel
+  image: redis:7.4-alpine
+  restart: unless-stopped
+  depends_on:
+    redis:
+      condition: service_healthy
+  entrypoint: ["sh", "/etc/redis-sentinel.sh"]
+  environment:
+    REDIS_BOOTSTRAP_ADDRESS: ${KNOWLEDGE_HA_REDIS_NETWORK_PREFIX:-172.30.71}.11
+
+x-ha-app-dependencies: &ha-app-dependencies
+  kafka:
+    condition: service_healthy
+  kafka-2:
+    condition: service_healthy
+  kafka-3:
+    condition: service_healthy
+  pg-init:
+    condition: service_completed_successfully
+
+x-ha-java-env: &ha-java-env
+  KNOWLEDGE_DATABASE_URL: jdbc:postgresql://postgres:5432,postgres-secondary:5432/knowledge?targetServerType=primary&connectTimeout=2
+  KNOWLEDGE_KAFKA_BOOTSTRAP: kafka:9092,kafka-2:9092,kafka-3:9092
+  KNOWLEDGE_KAFKA_REPLICAS: 3
+
+x-ha-api-env: &ha-api-env
+  <<: *ha-java-env
+  SPRING_DATA_REDIS_SENTINEL_MASTER: knowledge-redis
+  SPRING_DATA_REDIS_SENTINEL_NODES: redis-sentinel-1:26379,redis-sentinel-2:26379,redis-sentinel-3:26379
+
+services:
+  etcd-1:
+    <<: *etcd
+    environment:
+      <<: *etcd-env
+      ETCD_NAME: etcd-1
+      ETCD_ADVERTISE_CLIENT_URLS: http://etcd-1:2379
+      ETCD_INITIAL_ADVERTISE_PEER_URLS: http://etcd-1:2380
+    volumes: [etcd_1:/var/lib/etcd]
+  etcd-2:
+    <<: *etcd
+    environment:
+      <<: *etcd-env
+      ETCD_NAME: etcd-2
+      ETCD_ADVERTISE_CLIENT_URLS: http://etcd-2:2379
+      ETCD_INITIAL_ADVERTISE_PEER_URLS: http://etcd-2:2380
+    volumes: [etcd_2:/var/lib/etcd]
+  etcd-3:
+    <<: *etcd
+    environment:
+      <<: *etcd-env
+      ETCD_NAME: etcd-3
+      ETCD_ADVERTISE_CLIENT_URLS: http://etcd-3:2379
+      ETCD_INITIAL_ADVERTISE_PEER_URLS: http://etcd-3:2380
+    volumes: [etcd_3:/var/lib/etcd]
+
+  pg-1:
+    <<: *patroni
+    environment:
+      <<: *patroni-env
+      PATRONI_NAME: pg-1
+      PATRONI_POSTGRESQL_CONNECT_ADDRESS: pg-1:5432
+      PATRONI_RESTAPI_CONNECT_ADDRESS: pg-1:8008
+    volumes: [knowledge_patroni_1:/var/lib/postgresql/patroni]
+  pg-2:
+    <<: *patroni
+    environment:
+      <<: *patroni-env
+      PATRONI_NAME: pg-2
+      PATRONI_POSTGRESQL_CONNECT_ADDRESS: pg-2:5432
+      PATRONI_RESTAPI_CONNECT_ADDRESS: pg-2:8008
+    volumes: [knowledge_patroni_2:/var/lib/postgresql/patroni]
+  pg-3:
+    <<: *patroni
+    environment:
+      <<: *patroni-env
+      PATRONI_NAME: pg-3
+      PATRONI_POSTGRESQL_CONNECT_ADDRESS: pg-3:5432
+      PATRONI_RESTAPI_CONNECT_ADDRESS: pg-3:8008
+    volumes: [knowledge_patroni_3:/var/lib/postgresql/patroni]
+
+  postgres: &postgres-proxy
+    image: haproxy:3.0-alpine
+    restart: unless-stopped
+    environment: !reset {}
+    depends_on: [pg-1, pg-2, pg-3]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8404/ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    volumes: !override
+      - ./knowledge-backend/ha/postgres-proxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+
+  postgres-secondary:
+    <<: *postgres-proxy
+
+  kafka:
+    environment:
+      <<: *kafka-ha-env
+      KAFKA_NODE_ID: 1
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+    volumes: !override [knowledge_kafka_ha_1:/var/lib/kafka/data]
+  kafka-2:
+    <<: *kafka-ha
+    environment:
+      <<: *kafka-ha-env
+      KAFKA_NODE_ID: 2
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-2:9092
+    volumes: [knowledge_kafka_ha_2:/var/lib/kafka/data]
+  kafka-3:
+    <<: *kafka-ha
+    environment:
+      <<: *kafka-ha-env
+      KAFKA_NODE_ID: 3
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-3:9092
+    volumes: [knowledge_kafka_ha_3:/var/lib/kafka/data]
+
+  redis:
+    <<: *redis-node
+    command: !reset []
+    networks:
+      redis-ha:
+        ipv4_address: ${KNOWLEDGE_HA_REDIS_NETWORK_PREFIX:-172.30.71}.11
+    volumes: [./knowledge-backend/ha/redis-node.sh:/etc/redis-node.sh:ro, redis_node_1:/data]
+  redis-replica-1:
+    <<: *redis-node
+    depends_on: [redis]
+    environment:
+      REDIS_BOOTSTRAP_UPSTREAM: ${KNOWLEDGE_HA_REDIS_NETWORK_PREFIX:-172.30.71}.11
+    networks:
+      redis-ha:
+        ipv4_address: ${KNOWLEDGE_HA_REDIS_NETWORK_PREFIX:-172.30.71}.12
+    volumes: [./knowledge-backend/ha/redis-node.sh:/etc/redis-node.sh:ro, redis_node_2:/data]
+  redis-replica-2:
+    <<: *redis-node
+    depends_on: [redis]
+    environment:
+      REDIS_BOOTSTRAP_UPSTREAM: ${KNOWLEDGE_HA_REDIS_NETWORK_PREFIX:-172.30.71}.11
+    networks:
+      redis-ha:
+        ipv4_address: ${KNOWLEDGE_HA_REDIS_NETWORK_PREFIX:-172.30.71}.13
+    volumes: [./knowledge-backend/ha/redis-node.sh:/etc/redis-node.sh:ro, redis_node_3:/data]
+  redis-sentinel-1:
+    <<: *sentinel
+    networks:
+      redis-ha:
+        ipv4_address: ${KNOWLEDGE_HA_REDIS_NETWORK_PREFIX:-172.30.71}.21
+    volumes: [./knowledge-backend/ha/redis-sentinel.sh:/etc/redis-sentinel.sh:ro, redis_sentinel_1:/data]
+  redis-sentinel-2:
+    <<: *sentinel
+    networks:
+      redis-ha:
+        ipv4_address: ${KNOWLEDGE_HA_REDIS_NETWORK_PREFIX:-172.30.71}.22
+    volumes: [./knowledge-backend/ha/redis-sentinel.sh:/etc/redis-sentinel.sh:ro, redis_sentinel_2:/data]
+  redis-sentinel-3:
+    <<: *sentinel
+    networks:
+      redis-ha:
+        ipv4_address: ${KNOWLEDGE_HA_REDIS_NETWORK_PREFIX:-172.30.71}.23
+    volumes: [./knowledge-backend/ha/redis-sentinel.sh:/etc/redis-sentinel.sh:ro, redis_sentinel_3:/data]
+
+  index:
+    environment:
+      KNOWLEDGE_SEARCH_DATABASE_URL: postgresql://knowledge_index@postgres:5432,postgres-secondary:5432/knowledge?target_session_attrs=read-write
+    depends_on:
+      pg-init:
+        condition: service_completed_successfully
+  api:
+    networks: [default, redis-ha]
+    depends_on: *ha-app-dependencies
+    environment: *ha-api-env
+  api-secondary:
+    networks: [default, redis-ha]
+    depends_on: *ha-app-dependencies
+    environment: *ha-api-env
+  worker:
+    depends_on: *ha-app-dependencies
+    environment: *ha-java-env
+
+networks:
+  redis-ha:
+    internal: true
+    ipam:
+      config:
+        - subnet: ${KNOWLEDGE_HA_REDIS_NETWORK_PREFIX:-172.30.71}.0/24
+
+volumes:
+  etcd_1:
+  etcd_2:
+  etcd_3:
+  knowledge_patroni_1:
+  knowledge_patroni_2:
+  knowledge_patroni_3:
+  knowledge_kafka_ha_1:
+  knowledge_kafka_ha_2:
+  knowledge_kafka_ha_3:
+  redis_node_1:
+  redis_node_2:
+  redis_node_3:
+  redis_sentinel_1:
+  redis_sentinel_2:
+  redis_sentinel_3:

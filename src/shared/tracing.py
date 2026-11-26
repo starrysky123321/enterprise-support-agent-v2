@@ -1,0 +1,70 @@
+from __future__ import annotations
+
+import json
+import logging
+from dataclasses import asdict, dataclass
+from typing import Any
+
+from src.settings.rag_runtime import RagRuntimeSettings, get_rag_settings
+
+TRACE_LOGGER_NAME = "enterprise_support.trace"
+_logger = logging.getLogger(TRACE_LOGGER_NAME)
+_runtime: RagRuntimeSettings | None = None
+
+
+@dataclass(slots=True)
+class TraceContext:
+    request_id: str
+    doc_id: str | None = None
+    owner_user_id: str | None = None
+    session_id: str | None = None
+
+
+def configure_trace_logging(settings: RagRuntimeSettings | None = None) -> None:
+    global _runtime
+    _runtime = settings
+    if not logging.getLogger().handlers:
+        logging.basicConfig(level=logging.INFO, format="%(message)s")
+
+
+def trace_event(
+    event: str,
+    *,
+    trace_context: TraceContext | None = None,
+    **fields: Any,
+) -> None:
+    settings = _runtime or get_rag_settings()
+    if not settings.tracing_enabled:
+        return
+
+    payload: dict[str, Any] = {"event": event}
+    if trace_context is not None:
+        payload.update({k: v for k, v in asdict(trace_context).items() if v is not None})
+    payload.update({k: v for k, v in fields.items() if v is not None})
+
+    if not settings.tracing_include_query_text:
+        payload.pop("question", None)
+        payload.pop("query", None)
+        payload.pop("refined_query", None)
+
+    _logger.info(json.dumps(payload, default=_json_default, sort_keys=True))
+
+
+def chunk_metadata(chunks: list[Any]) -> list[dict[str, Any]]:
+    metadata: list[dict[str, Any]] = []
+    for chunk in chunks:
+        metadata.append(
+            {
+                "chunk_id": getattr(chunk, "chunk_id", None),
+                "doc_id": getattr(chunk, "doc_id", None),
+                "page_number": getattr(chunk, "page_number", None),
+                "score": getattr(chunk, "score", None),
+                "source": getattr(chunk, "source", None),
+                "retrieval_sources": getattr(chunk, "retrieval_sources", ()),
+            }
+        )
+    return metadata
+
+
+def _json_default(value: Any) -> str:
+    return str(value)

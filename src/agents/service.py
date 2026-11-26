@@ -1,0 +1,224 @@
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Any
+
+from src.agents.cache_policy import is_no_answer_fallback
+from src.infrastructure.llm.local_llm import LOCAL_EXTRACTIVE_MODEL
+from src.rag.evidence import EvidenceText, select_local_evidence
+from src.shared.interfaces.llm import ChatMessage, GenerationConfig, LLM, MessageRole
+from src.shared.interfaces.tool import ToolContext
+from src.tools import ToolRegistry
+
+NO_ANSWER_FALLBACK = "I could not find the answer in the provided documents."
+
+DEFAULT_SYSTEM_PROMPT = (
+    "You are a strict RAG assistant. You must answer only from retrieved tool outputs.\n\n"
+    "Rules:\n"
+    f"- If retrieval does not explicitly contain the answer, reply exactly: '{NO_ANSWER_FALLBACK}'\n"
+    "- Do not infer, guess, or use prior knowledge.\n"
+    "- Do not add details not present in retrieved context.\n"
+    "- Every factual bullet must end with its supporting citation in this format: [chunk_id].\n\n"
+    "Output format:\n"
+    "- Return only bullet points.\n"
+    "- Each bullet must end with one citation tag such as [chunk-12].\n"
+)
+
+
+@dataclass(slots=True)
+class AgentCitation:
+    source: str
+    doc_id: str
+    chunk_id: str
+    snippet: str
+    page_number: int | None = None
+
+
+@dataclass(slots=True)
+class AgentResult:
+    answer: str
+    steps: int
+    tools_used: list[str]
+    status: str
+    citations: list[AgentCitation] = field(default_factory=list)
+
+
+class AgentService:
+    def __init__(
+        self,
+        *,
+        llm: LLM,
+        registry: ToolRegistry,
+        max_steps: int = 6,
+        temperature: float = 0.0,
+        max_tokens: int | None = None,
+        timeout_s: float | None = 30.0,
+        system_prompt: str = DEFAULT_SYSTEM_PROMPT,
+    ) -> None:
+        self._llm = llm
+        self._registry = registry
+        self._max_steps = max_steps
+        self._generation_config = GenerationConfig(
+            temperature=temperature,
+            max_tokens=max_tokens,
+            timeout_s=timeout_s,
+        )
+        self._system_prompt = (
+            f"{system_prompt}\nBefore answering, check that the retrieved text explicitly "
+            "supplies each fact requested, including the exact setting, value and applicable "
+            "version when asked. Related instructions alone do not supply a missing fact. "
+            f"If any required fact is missing, reply exactly: '{NO_ANSWER_FALLBACK}'"
+        )
+
+    async def run(
+        self,
+        *,
+        question: str,
+        doc_id: str,
+        session_id: str | None = None,
+        user_id: str | None = None,
+        request_id: str | None = None,
+    ) -> AgentResult:
+        messages: list[ChatMessage] = [
+            ChatMessage(
+                role=MessageRole.SYSTEM,
+                content=self._system_prompt,
+            ),
+            ChatMessage(role=MessageRole.USER, content=question),
+        ]
+        tools_used: list[str] = []
+        latest_retrieval_payload: dict[str, Any] | None = None
+
+        for step in range(1, self._max_steps + 1):
+            response = await self._llm.generate(
+                messages=messages,
+                config=self._generation_config,
+                tools=self._registry.list_openai_tools(),
+            )
+
+            messages.append(
+                ChatMessage(
+                    role=MessageRole.ASSISTANT,
+                    content=response.content or "",
+                    tool_calls=response.tool_calls,
+                )
+            )
+
+            if not response.tool_calls:
+                answer = (response.content or "").strip()
+                citations = self._extract_citations(latest_retrieval_payload)
+                if not citations or not answer or is_no_answer_fallback(answer, exact=True):
+                    return AgentResult(
+                        answer=NO_ANSWER_FALLBACK,
+                        steps=step,
+                        tools_used=tools_used,
+                        status="ok",
+                        citations=[],
+                    )
+                return AgentResult(
+                    answer=answer,
+                    steps=step,
+                    tools_used=tools_used,
+                    status="ok",
+                    citations=citations,
+                )
+
+            for tool_call in response.tool_calls:
+                tool_result = await self._registry.execute_tool_call(
+                    tool_call,
+                    context=ToolContext(
+                        session_id=session_id,
+                        user_id=user_id,
+                        doc_id=doc_id,
+                        request_id=request_id,
+                    ),
+                )
+                tools_used.append(tool_call.name)
+                payload = (
+                    tool_result.output
+                    if tool_result.success
+                    else {"error": tool_result.error or "Tool execution failed."}
+                )
+
+                if (
+                    tool_call.name == "retrieve_context"
+                    and tool_result.success
+                    and isinstance(tool_result.output, dict)
+                ):
+                    latest_retrieval_payload = tool_result.output
+                    if self._llm.model_name == LOCAL_EXTRACTIVE_MODEL:
+                        latest_retrieval_payload = self._check_local_evidence(
+                            question, latest_retrieval_payload,
+                        )
+                        payload = latest_retrieval_payload
+
+                messages.append(
+                    ChatMessage(
+                        role=MessageRole.TOOL,
+                        name=tool_call.name,
+                        tool_call_id=tool_call.id,
+                        content=str(payload),
+                    )
+                )
+
+        return AgentResult(
+            answer="Agent stopped before final answer (max steps reached).",
+            steps=self._max_steps,
+            tools_used=tools_used,
+            status="max_steps_reached",
+            citations=self._extract_citations(latest_retrieval_payload),
+        )
+
+    @staticmethod
+    def _check_local_evidence(question: str, payload: dict[str, Any]) -> dict[str, Any]:
+        raw = payload.get("results", [])
+        results = [
+            item for item in raw if isinstance(item, dict) and item.get("text")
+        ] if isinstance(raw, list) else []
+        selected = select_local_evidence(
+            question,
+            [EvidenceText(str(item["text"]), item.get("product_version")) for item in results],
+            limit=3,
+        )
+        return {**payload, "results": [dict(results[index], text=text) for index, text in selected]}
+
+    @staticmethod
+    def _extract_citations(
+        retrieval_payload: dict[str, Any] | None,
+    ) -> list[AgentCitation]:
+        if not retrieval_payload:
+            return []
+        raw_results = retrieval_payload.get("results", [])
+        if not isinstance(raw_results, list):
+            return []
+
+        citations: list[AgentCitation] = []
+        for item in raw_results:
+            if not isinstance(item, dict):
+                continue
+            snippet = str(item.get("text", "")).strip()
+            if not snippet:
+                continue
+            chunk_id = str(item.get("chunk_id", "")).strip()
+            if not chunk_id:
+                continue
+
+            citations.append(
+                AgentCitation(
+                    source=str(item.get("source", "unknown")),
+                    doc_id=str(item.get("doc_id", "")),
+                    chunk_id=chunk_id,
+                    snippet=snippet[:280],
+                    page_number=AgentService._to_int(item.get("page_number")),
+                )
+            )
+        return citations
+
+    @staticmethod
+    def _to_int(value: Any) -> int | None:
+        if value is None:
+            return None
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None

@@ -1,0 +1,185 @@
+name: enterprise-knowledge
+
+x-java-service: &java-service
+  image: enterprise-knowledge-backend:local
+  build: ./knowledge-backend
+  restart: unless-stopped
+  stop_grace_period: 75s
+  depends_on:
+    postgres:
+      condition: service_healthy
+    kafka:
+      condition: service_healthy
+    pg-init:
+      condition: service_completed_successfully
+    index:
+      condition: service_healthy
+  healthcheck:
+    test: ["CMD", "bash", "-ec", "exec 3<>/dev/tcp/127.0.0.1/8081; printf 'GET /actuator/health/readiness HTTP/1.0\\r\\n\\r\\n' >&3; read -r status <&3; [[ $$status == 'HTTP/1.1 200 '* ]]"]
+    interval: 5s
+    timeout: 3s
+    retries: 15
+  environment: &java-env
+    SERVER_ADDRESS: 0.0.0.0
+    KNOWLEDGE_DATABASE_URL: jdbc:postgresql://postgres:5432/knowledge
+    KNOWLEDGE_DATABASE_USER: knowledge
+    KNOWLEDGE_DATABASE_PASSWORD: ${KNOWLEDGE_DATABASE_PASSWORD:?set the knowledge database password}
+    KNOWLEDGE_API_TOKEN: ${KNOWLEDGE_API_TOKEN:?set the admin token}
+    KNOWLEDGE_INDEX_TOKEN: ${KNOWLEDGE_INDEX_TOKEN:?set the internal token}
+    KNOWLEDGE_INDEX_URL: http://index:8011
+    KNOWLEDGE_KAFKA_ENABLED: "true"
+    KNOWLEDGE_KAFKA_BOOTSTRAP: kafka:9092
+    KNOWLEDGE_PDF_STORAGE_MODE: ${KNOWLEDGE_PDF_STORAGE_MODE:-filesystem}
+    KNOWLEDGE_PDF_STORAGE_DIR: /var/lib/knowledge/blobs
+  volumes:
+    - knowledge_blobs:/var/lib/knowledge/blobs
+
+services:
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 2s
+      retries: 10
+
+  kafka:
+    image: apache/kafka:4.2.2
+    restart: unless-stopped
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_HEAP_OPTS: -Xms256m -Xmx512m
+    healthcheck:
+      test: ["CMD", "/opt/kafka/bin/kafka-topics.sh", "--bootstrap-server", "kafka:9092", "--list"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+    volumes:
+      - knowledge_kafka:/var/lib/kafka/data
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: knowledge
+      POSTGRES_USER: knowledge
+      POSTGRES_PASSWORD: ${KNOWLEDGE_DATABASE_PASSWORD:?set the knowledge database password}
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "knowledge", "-d", "knowledge"]
+      interval: 3s
+      timeout: 2s
+      retries: 15
+    volumes:
+      - knowledge_pg:/var/lib/postgresql/data
+
+  pg-init:
+    image: pgvector/pgvector:pg16
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: ${KNOWLEDGE_DATABASE_PASSWORD:?set the knowledge database password}
+      KNOWLEDGE_SEARCH_DATABASE_PASSWORD: ${KNOWLEDGE_SEARCH_DATABASE_PASSWORD:-${KNOWLEDGE_INDEX_TOKEN:?set the internal token}}
+    entrypoint: ["sh", "/etc/init-postgres.sh"]
+    volumes:
+      - ./knowledge-backend/init-postgres.sh:/etc/init-postgres.sh:ro
+
+  index:
+    build:
+      context: .
+      dockerfile: knowledge-backend/index.Dockerfile
+    restart: unless-stopped
+    stop_grace_period: 75s
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      pg-init:
+        condition: service_completed_successfully
+    env_file: ${KNOWLEDGE_PYTHON_ENV_FILE:-.env.knowledge.example}
+    environment:
+      KNOWLEDGE_SEARCH_DATABASE_URL: postgresql://knowledge_index@postgres/knowledge
+      PGPASSWORD: ${KNOWLEDGE_SEARCH_DATABASE_PASSWORD:-${KNOWLEDGE_INDEX_TOKEN:?set the internal token}}
+      KNOWLEDGE_INDEX_TOKEN: ${KNOWLEDGE_INDEX_TOKEN:?set the internal token}
+      KNOWLEDGE_SEARCH_POOL_SIZE: ${KNOWLEDGE_SEARCH_POOL_SIZE:-12}
+      DENSE_ENABLED: "true"
+      BM25_ENABLED: "true"
+    command: ["/app/.venv/bin/python", "-m", "uvicorn", "src.api.knowledge_index:app", "--host", "0.0.0.0", "--port", "8011", "--workers", "${KNOWLEDGE_INDEX_PROCESSES:-2}", "--timeout-graceful-shutdown", "65"]
+    healthcheck:
+      test: ["CMD", "/app/.venv/bin/python", "-c", "import os, urllib.request as u; u.urlopen(u.Request('http://127.0.0.1:8011/internal/health', headers={'Authorization': 'Bearer ' + os.environ['KNOWLEDGE_INDEX_TOKEN']}), timeout=2).close()"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+
+  api: &api-service
+    <<: *java-service
+    environment:
+      <<: *java-env
+      KNOWLEDGE_WORKER_ENABLED: "false"
+      KNOWLEDGE_SQL_POOL_SIZE: ${KNOWLEDGE_API_SQL_POOL_SIZE:-10}
+      KNOWLEDGE_SEARCH_CONCURRENCY: ${KNOWLEDGE_SEARCH_CONCURRENCY:-32}
+      KNOWLEDGE_SEARCH_CACHE_ENABLED: ${KNOWLEDGE_SEARCH_CACHE_ENABLED:-true}
+      KNOWLEDGE_SEARCH_CACHE_TTL_SECONDS: ${KNOWLEDGE_SEARCH_CACHE_TTL_SECONDS:-30}
+      KNOWLEDGE_SEARCH_CACHE_MAX_ENTRIES: ${KNOWLEDGE_SEARCH_CACHE_MAX_ENTRIES:-512}
+      KNOWLEDGE_SEARCH_CACHE_REVISION: ${KNOWLEDGE_SEARCH_CACHE_REVISION:-default}
+      KNOWLEDGE_ASK_CONCURRENCY: ${KNOWLEDGE_ASK_CONCURRENCY:-6}
+      KNOWLEDGE_PDF_UPLOAD_CONCURRENCY: ${KNOWLEDGE_PDF_UPLOAD_CONCURRENCY:-4}
+      KNOWLEDGE_REDIS_HOST: redis
+      KNOWLEDGE_RATE_LIMIT_ENABLED: ${KNOWLEDGE_RATE_LIMIT_ENABLED:-true}
+      KNOWLEDGE_SEARCH_RATE_PER_MINUTE: ${KNOWLEDGE_SEARCH_RATE_PER_MINUTE:-60000}
+      KNOWLEDGE_SEARCH_BURST: ${KNOWLEDGE_SEARCH_BURST:-1000}
+      KNOWLEDGE_ASK_RATE_PER_MINUTE: ${KNOWLEDGE_ASK_RATE_PER_MINUTE:-7200}
+      KNOWLEDGE_ASK_BURST: ${KNOWLEDGE_ASK_BURST:-120}
+    deploy:
+      replicas: ${KNOWLEDGE_API_REPLICAS:-1}
+
+  api-secondary:
+    <<: *api-service
+    deploy:
+      replicas: ${KNOWLEDGE_API_SECONDARY_REPLICAS:-1}
+
+  worker:
+    <<: *java-service
+    environment:
+      <<: *java-env
+      KNOWLEDGE_API_ENABLED: "false"
+      KNOWLEDGE_SQL_POOL_SIZE: ${KNOWLEDGE_WORKER_SQL_POOL_SIZE:-4}
+      KNOWLEDGE_WORKER_CONCURRENCY: ${KNOWLEDGE_WORKER_CONCURRENCY:-4}
+      KNOWLEDGE_MAX_ATTEMPTS: ${KNOWLEDGE_MAX_ATTEMPTS:-3}
+
+  gateway:
+    image: enterprise-knowledge-gateway:local
+    build: ./knowledge-frontend
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+      api-secondary:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${KNOWLEDGE_PORT:-8081}:8080"
+    volumes:
+      - ./knowledge-backend/nginx.conf:/etc/nginx/nginx.conf:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/health/ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  knowledge_pg:
+  knowledge_kafka:
+  knowledge_blobs:

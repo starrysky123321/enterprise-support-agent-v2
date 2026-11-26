@@ -1,0 +1,10 @@
+{
+  "holdout-none-108": {
+    "reason": "The combined corpus explicitly gives the archiver queue capacity; backlog is the same queue, and the question does not request a separate night-time override.",
+    "evidence": [{"doc_id": "svc2-archiver", "chunk_id": "chunk-3", "quote": "at most 380 pending jobs"}]
+  },
+  "holdout-none-115": {
+    "reason": "The original telemetry guide explicitly gives the production trace sampling rate.",
+    "evidence": [{"doc_id": "telemetry-guide", "chunk_id": "chunk-2", "quote": "production trace sampling rate is 5 percent"}]
+  }
+}

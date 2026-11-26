@@ -1,0 +1,36 @@
+scope: knowledge-ha
+namespace: /service/
+restapi:
+  listen: 0.0.0.0:8008
+etcd3:
+  hosts: etcd-1:2379,etcd-2:2379,etcd-3:2379
+bootstrap:
+  dcs:
+    ttl: 20
+    loop_wait: 3
+    retry_timeout: 5
+    synchronous_mode: true
+    synchronous_mode_strict: true
+    synchronous_node_count: 1
+    maximum_lag_on_failover: 1048576
+    postgresql:
+      use_pg_rewind: true
+      parameters:
+        max_connections: 120
+        synchronous_commit: 'on'
+  initdb:
+    - encoding: UTF8
+    - data-checksums
+  pg_hba:
+    - host replication knowledge_repl 0.0.0.0/0 scram-sha-256
+    - host all all 0.0.0.0/0 scram-sha-256
+    - host replication knowledge_repl ::/0 scram-sha-256
+    - host all all ::/0 scram-sha-256
+postgresql:
+  listen: 0.0.0.0:5432
+  data_dir: /var/lib/postgresql/patroni/data
+  authentication:
+    superuser:
+      username: knowledge
+    replication:
+      username: knowledge_repl
